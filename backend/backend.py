@@ -16,7 +16,11 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__, static_folder='.')
 CORS(app)  
 
-ETHERSCAN_API_KEY = os.getenv('ETHERSCAN_API_KEY', '9FJFBY6T13DP36JEFRETADMIC6KA6ZCRZX')
+# Get API key from environment variable (required for production)
+ETHERSCAN_API_KEY = os.getenv('ETHERSCAN_API_KEY')
+if not ETHERSCAN_API_KEY:
+    logger.warning("ETHERSCAN_API_KEY not found in environment variables!")
+
 blockchain_service = BlockchainService(api_key=ETHERSCAN_API_KEY)
 currency_service = CurrencyExchangeService()
 pdf_generator = PDFReportGenerator()

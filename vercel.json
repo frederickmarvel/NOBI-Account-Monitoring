@@ -15,8 +15,5 @@
       "src": "/(.*)",
       "dest": "/frontend/$1"
     }
-  ],
-  "env": {
-    "ETHERSCAN_API_KEY": "@etherscan_api_key"
-  }
+  ]
 }
