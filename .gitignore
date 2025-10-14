@@ -41,3 +41,4 @@ coverage/
 # API keys backup (never commit these!)
 config.backup.js
 *-backup.js
+.vercel

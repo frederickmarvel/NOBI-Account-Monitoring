@@ -7,10 +7,18 @@
 .git/
 .gitignore
 
-# Documentation (optional - comment out if you want docs on Vercel)
-# docs/
-# archive/
-# *.md
+# Documentation (not needed for deployment)
+docs/
+archive/
+FOLDER_STRUCTURE.md
+TROUBLESHOOTING.md
+VERCEL_DEPLOYMENT.md
+VERCEL_QUICKSTART.md
+VERCEL_DEPLOYMENT_SUCCESS.md
+
+# Scripts (not needed for deployment)
+start.sh
+deploy-vercel.sh
 
 # IDE files
 .vscode/
@@ -33,17 +41,17 @@ __pycache__/
 *$py.class
 *.so
 
-# Virtual environments (if any)
+# Virtual environments
 venv/
 env/
 ENV/
 
-# Test files (if you add tests later)
+# Test files
 tests/
 *.test.js
 *.spec.js
 
-# Build artifacts (if any)
+# Build artifacts
 dist/
 build/
 .cache/
@@ -52,3 +60,6 @@ build/
 tmp/
 temp/
 *.tmp
+
+# Vercel build folder
+.vercel/

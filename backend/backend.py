@@ -40,16 +40,8 @@ CHAIN_IDS = {
 }
 
 
-@app.route('/')
-def index():
-    """Serve the main HTML file"""
-    return send_from_directory('.', 'index.html')
-
-
-@app.route('/<path:path>')
-def serve_static(path):
-    """Serve static files (CSS, JS, etc.)"""
-    return send_from_directory('.', path)
+# Static file serving is handled by Vercel's routing in vercel.json
+# No need for these routes in serverless deployment
 
 
 @app.route('/api/health', methods=['GET'])
