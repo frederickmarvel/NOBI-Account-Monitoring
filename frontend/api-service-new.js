@@ -3,7 +3,17 @@
 
 class BlockchainAPIService {
   constructor() {
-    this.backendUrl = 'http://localhost:8085/api';
+    // Auto-detect environment: local development vs production
+    const isDevelopment = window.location.hostname === 'localhost' || 
+                         window.location.hostname === '127.0.0.1' ||
+                         window.location.protocol === 'file:';
+    
+    // Use local backend in development, relative path in production
+    this.backendUrl = isDevelopment 
+      ? 'http://localhost:8085/api'
+      : window.location.origin + '/api';
+    
+    console.log(`API Backend: ${this.backendUrl}`);
     this.cache = new Map();
   }
 

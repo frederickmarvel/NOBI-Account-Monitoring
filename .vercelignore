@@ -1,0 +1,54 @@
+# Vercel Ignore - Files to exclude from deployment
+
+# Environment variables (keep local only)
+.env
+
+# Git files
+.git/
+.gitignore
+
+# Documentation (optional - comment out if you want docs on Vercel)
+# docs/
+# archive/
+# *.md
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+.DS_Store?
+
+# Logs
+*.log
+npm-debug.log*
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual environments (if any)
+venv/
+env/
+ENV/
+
+# Test files (if you add tests later)
+tests/
+*.test.js
+*.spec.js
+
+# Build artifacts (if any)
+dist/
+build/
+.cache/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
