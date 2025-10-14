@@ -291,12 +291,6 @@ def internal_error(error):
     }), 500
 
 
-# For Vercel serverless deployment
-# Export the app for WSGI
-def handler(request, context):
-    """Vercel serverless handler"""
-    return app(request, context)
-
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 5000))
     debug = os.getenv('DEBUG', 'True').lower() == 'true'
