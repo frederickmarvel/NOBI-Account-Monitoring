@@ -55,7 +55,8 @@ class PDFReportGenerator:
         balance: float,
         crypto_symbol: str,
         prices: Dict[str, float],
-        date_range: Dict[str, str]
+        date_range: Dict[str, str],
+        token_balances: Dict[str, Dict] = None
     ) -> bytes:
         """
         Generate PDF account statement
@@ -68,6 +69,7 @@ class PDFReportGenerator:
             crypto_symbol: Symbol (ETH, BTC, etc.)
             prices: {'usd': price, 'aed': price}
             date_range: {'start': 'YYYY-MM-DD', 'end': 'YYYY-MM-DD'}
+            token_balances: Optional dict of token balances with prices
             
         Returns:
             PDF file as bytes
@@ -89,6 +91,23 @@ class PDFReportGenerator:
         )
         elements.append(account_info)
         elements.append(Spacer(1, 0.2*inch))
+        
+        # Token Balances (if available)
+        if token_balances:
+            token_heading = Paragraph("Token Holdings", self.styles['CustomHeading'])
+            elements.append(token_heading)
+            elements.append(Spacer(1, 0.1*inch))
+            
+            token_table = self._create_token_balances_table(token_balances)
+            elements.append(token_table)
+            elements.append(Spacer(1, 0.2*inch))
+        
+        # Total Account Value
+        total_value = self._create_total_value_table(
+            balance, crypto_symbol, prices, token_balances
+        )
+        elements.append(total_value)
+        elements.append(Spacer(1, 0.3*inch))
         
         # Token Filter Info
         token_info = self._create_token_info_section(transactions)
@@ -139,15 +158,15 @@ class PDFReportGenerator:
         balance_aed = balance * prices['aed']
         
         data = [
-            ['Account Information', ''],
+            ['ACCOUNT DETAILS', ''],
             ['Blockchain', blockchain.upper()],
-            ['Address', f"{address[:10]}...{address[-8:]}"],
-            ['Date Range', f"{date_range['start']} to {date_range['end']}"],
+            ['Wallet Address', f"{address[:10]}...{address[-8:]}"],
+            ['Statement Period', f"{date_range['start']} to {date_range['end']}"],
             ['', ''],
-            ['Current Balance', ''],
-            [f'{crypto_symbol}', f"{balance:.6f}"],
-            ['USD', f"${balance_usd:,.2f}"],
-            ['AED', f"AED {balance_aed:,.2f}"],
+            [f'{crypto_symbol} BALANCE', ''],
+            [f'Amount', f"{balance:.6f} {crypto_symbol}"],
+            ['USD Value', f"${balance_usd:,.2f}"],
+            ['AED Value', f"AED {balance_aed:,.2f}"],
         ]
         
         table = Table(data, colWidths=[2.5*inch, 4*inch])
@@ -164,6 +183,98 @@ class PDFReportGenerator:
             ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
             ('FONTNAME', (0, 6), (0, 8), 'Helvetica-Bold'),
             ('ALIGN', (1, 6), (1, 8), 'RIGHT'),
+        ]))
+        
+        return table
+    
+    def _create_token_balances_table(self, token_balances: Dict[str, Dict]) -> Table:
+        """Create token balances table"""
+        data = [
+            ['Token', 'Balance', 'USD Value', 'AED Value']
+        ]
+        
+        # Sort tokens by USD value (highest first)
+        sorted_tokens = sorted(
+            token_balances.items(),
+            key=lambda x: x[1]['value_usd'],
+            reverse=True
+        )
+        
+        for token_symbol, token_info in sorted_tokens:
+            data.append([
+                f"{token_symbol}",
+                f"{token_info['balance']:.6f}",
+                f"${token_info['value_usd']:,.2f}",
+                f"AED {token_info['value_aed']:,.2f}"
+            ])
+        
+        table = Table(data, colWidths=[1.5*inch, 2*inch, 1.5*inch, 1.5*inch])
+        table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#27ae60')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 11),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.white),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('FONTNAME', (0, 1), (0, -1), 'Helvetica-Bold'),
+            ('ALIGN', (1, 1), (-1, -1), 'RIGHT'),
+            ('FONTSIZE', (0, 1), (-1, -1), 10),
+        ]))
+        
+        return table
+    
+    def _create_total_value_table(
+        self, balance: float, crypto_symbol: str, prices: Dict,
+        token_balances: Dict[str, Dict] = None
+    ) -> Table:
+        """Create total account value table"""
+        # Calculate native token value
+        native_value_usd = balance * prices['usd']
+        native_value_aed = balance * prices['aed']
+        
+        # Calculate token values
+        token_value_usd = 0
+        token_value_aed = 0
+        if token_balances:
+            for token_info in token_balances.values():
+                token_value_usd += token_info['value_usd']
+                token_value_aed += token_info['value_aed']
+        
+        # Calculate totals
+        total_value_usd = native_value_usd + token_value_usd
+        total_value_aed = native_value_aed + token_value_aed
+        
+        data = [
+            ['TOTAL ACCOUNT VALUE', '', ''],
+            ['Asset Type', 'USD Value', 'AED Value'],
+            [f'{crypto_symbol} Balance', f'${native_value_usd:,.2f}', f'AED {native_value_aed:,.2f}'],
+        ]
+        
+        if token_balances:
+            data.append(['Token Holdings', f'${token_value_usd:,.2f}', f'AED {token_value_aed:,.2f}'])
+        
+        data.append(['', '', ''])
+        data.append(['GRAND TOTAL', f'${total_value_usd:,.2f}', f'AED {total_value_aed:,.2f}'])
+        
+        table = Table(data, colWidths=[2.5*inch, 2*inch, 2*inch])
+        table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#e74c3c')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 12),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('BACKGROUND', (0, 1), (-1, 1), colors.HexColor('#ecf0f1')),
+            ('FONTNAME', (0, 1), (-1, 1), 'Helvetica-Bold'),
+            ('BACKGROUND', (0, 2), (-1, 3 if token_balances else 2), colors.white),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#f39c12')),
+            ('TEXTCOLOR', (0, -1), (-1, -1), colors.whitesmoke),
+            ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, -1), (-1, -1), 12),
+            ('ALIGN', (1, 2), (-1, -1), 'RIGHT'),
         ]))
         
         return table

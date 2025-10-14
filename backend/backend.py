@@ -229,6 +229,7 @@ def export_pdf(blockchain, address):
         if not data.get('success'):
             return jsonify(data), 500
         
+        # Get native token price
         prices_data = currency_service.get_crypto_prices([crypto_symbol])
         prices = prices_data.get(crypto_symbol, {'usd': 0, 'aed': 0})
         
@@ -245,6 +246,31 @@ def export_pdf(blockchain, address):
             print(f"DEBUG BACKEND: First 3 transaction amounts: {[tx.get('amount', 'N/A') for tx in transactions[:3]]}")
             print(f"DEBUG BACKEND: Balance raw: {balance_raw}, Balance converted: {balance}")
         
+        # Get token balances and prices for EVM chains
+        token_balances_with_prices = {}
+        token_balances = data.get('token_balances', {})
+        
+        if token_balances and blockchain in CHAIN_IDS:
+            # Get all token symbols
+            token_symbols = list(token_balances.keys())
+            
+            # Fetch prices for all tokens
+            token_prices_data = currency_service.get_crypto_prices(token_symbols)
+            
+            # Combine balance and price data
+            for token_symbol, token_info in token_balances.items():
+                token_prices = token_prices_data.get(token_symbol, {'usd': 0, 'aed': 0})
+                token_balances_with_prices[token_symbol] = {
+                    'balance': token_info['balance'],
+                    'contract': token_info['contract'],
+                    'name': token_info['name'],
+                    'decimals': token_info['decimals'],
+                    'price_usd': token_prices['usd'],
+                    'price_aed': token_prices['aed'],
+                    'value_usd': token_info['balance'] * token_prices['usd'],
+                    'value_aed': token_info['balance'] * token_prices['aed']
+                }
+        
         pdf_bytes = pdf_generator.generate_account_statement(
             address=address,
             blockchain=blockchain,
@@ -252,7 +278,8 @@ def export_pdf(blockchain, address):
             balance=balance,
             crypto_symbol=crypto_symbol,
             prices=prices,
-            date_range={'start': start_date, 'end': end_date}
+            date_range={'start': start_date, 'end': end_date},
+            token_balances=token_balances_with_prices
         )
         
         pdf_buffer = io.BytesIO(pdf_bytes)

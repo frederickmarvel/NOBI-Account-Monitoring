@@ -75,7 +75,14 @@ class CurrencyExchangeService:
             'AVAX': 'avalanche-2',
             'SOL': 'solana',
             'ADA': 'cardano',
-            'TRX': 'tron'
+            'TRX': 'tron',
+            # ERC-20 Tokens
+            'USDT': 'tether',
+            'USDC': 'usd-coin',
+            'WBTC': 'wrapped-bitcoin',
+            'WETH': 'weth',
+            'DAI': 'dai',
+            'WMATIC': 'wmatic'
         }
         
         coin_id = symbol_map.get(symbol.upper(), symbol.lower())

@@ -21,7 +21,6 @@ class RateLimiter:
     
     def wait_if_needed(self):
         now = time.time()
-        # Remove calls older than 1 second
         self.calls = [call_time for call_time in self.calls if now - call_time < 1]
         
         if len(self.calls) >= self.max_calls:
@@ -36,8 +35,6 @@ class RateLimiter:
 class BlockchainService:
     """Main service for fetching blockchain data"""
     
-    # Token whitelist - only these tokens will be included in results
-    # Maps contract addresses (lowercase) to token info
     WHITELISTED_TOKENS = {
         # Ethereum Mainnet (Chain ID 1)
         '0xdac17f958d2ee523a2206206994597c13d831ec7': {'symbol': 'USDT', 'name': 'Tether USD'},
@@ -115,6 +112,66 @@ class BlockchainService:
                     return {'status': '0', 'result': [], 'message': str(e)}
         
         return {'status': '0', 'result': [], 'message': 'Max retries exceeded'}
+    
+    def get_token_balances(self, address: str, chain_id: int) -> Dict[str, Dict]:
+        """
+        Fetch ERC-20 token balances for major tokens (USDT, USDC, WBTC, WETH)
+        
+        Args:
+            address: Wallet address
+            chain_id: EVM chain ID
+            
+        Returns:
+            Dict with token balances: {'USDT': {'balance': 1000.50, 'contract': '0x...'}, ...}
+        """
+        base_url = "https://api.etherscan.io/v2/api"
+        token_balances = {}
+        
+        # Get tokens for this chain
+        chain_tokens = {addr: info for addr, info in self.WHITELISTED_TOKENS.items() 
+                       if info['symbol'] in ['USDT', 'USDC', 'WBTC', 'WETH', 'WMATIC']}
+        
+        for contract_address, token_info in chain_tokens.items():
+            try:
+                # Fetch token balance using Etherscan API
+                params = {
+                    'chainid': chain_id,
+                    'module': 'account',
+                    'action': 'tokenbalance',
+                    'contractaddress': contract_address,
+                    'address': address,
+                    'tag': 'latest',
+                    'apikey': self.api_key
+                }
+                
+                url = f"{base_url}?" + "&".join([f"{k}={v}" for k, v in params.items()])
+                data = self.fetch_with_retry(url)
+                
+                if data.get('status') == '1' and data.get('result'):
+                    # Get token decimals (usually 18 for WETH, 6 for USDT/USDC, 8 for WBTC)
+                    decimals = 18  # default
+                    if token_info['symbol'] in ['USDT', 'USDC']:
+                        decimals = 6
+                    elif token_info['symbol'] == 'WBTC':
+                        decimals = 8
+                    
+                    balance_raw = int(data['result'])
+                    balance = balance_raw / (10 ** decimals)
+                    
+                    if balance > 0:  # Only include if balance exists
+                        token_balances[token_info['symbol']] = {
+                            'balance': balance,
+                            'contract': contract_address,
+                            'name': token_info['name'],
+                            'decimals': decimals
+                        }
+                        logger.info(f"Found {token_info['symbol']} balance: {balance}")
+                
+            except Exception as e:
+                logger.warning(f"Error fetching {token_info['symbol']} balance: {str(e)}")
+                continue
+        
+        return token_balances
     
     def get_ethereum_transactions(self, address: str, chain_id: int, start_date: str, end_date: str) -> Dict:
         """
@@ -202,14 +259,18 @@ class BlockchainService:
         # Sort by timestamp
         transactions.sort(key=lambda x: x['timestamp'], reverse=True)
         
-        # Get balance
+        # Get native balance
         balance = '0'
         if balance_data.get('status') == '1':
             balance = balance_data.get('result', '0')
         
+        # Get token balances (USDT, USDC, WBTC, WETH)
+        token_balances = self.get_token_balances(address, chain_id)
+        
         return {
             'success': True,
             'balance': balance,
+            'token_balances': token_balances,
             'transactions': transactions,
             'count': len(transactions)
         }
