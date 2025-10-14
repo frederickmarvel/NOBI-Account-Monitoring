@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Blockchain Balance Screener</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+</head>
+<body>
+    <!-- Header Section -->
+    <header class="header">
+        <div class="container">
+            <h1 class="header__title">Blockchain Balance Screener</h1>
+            <p class="header__subtitle">Comprehensive blockchain address analysis &amp; transaction tracking across multiple networks</p>
+        </div>
+    </header>
+
+    <!-- Main Application -->
+    <main class="main">
+        <div class="container">
+            <!-- Input Panel -->
+            <section class="input-panel">
+                <div class="card">
+                    <div class="card__body">
+                        <form id="analysis-form" class="analysis-form">
+                            <!-- Address Input -->
+                            <div class="form-group">
+                                <label for="address" class="form-label">Blockchain Address</label>
+                                <input 
+                                    type="text" 
+                                    id="address" 
+                                    name="address"
+                                    class="form-control address-input" 
+                                    placeholder="Enter wallet address (e.g., 0x742d35cc6634C0532925a3b8d4d9c8c5c5de9C18)"
+                                    required
+                                >
+                                <div class="address-validation" id="address-validation"></div>
+                                <div class="sample-addresses">
+                                    <span class="sample-label">Sample addresses:</span>
+                                    <button type="button" class="sample-btn" data-address="0x8ba1f109551bD432803012645Hac136c9c3c1b83de8" data-chain="ethereum">Ethereum</button>
+                                    <button type="button" class="sample-btn" data-address="0x5350E1068f0E138ff306990B16fA4910d970c692" data-chain="polygon">Polygon</button>
+                                    <button type="button" class="sample-btn" data-address="1MDUoxL1bGvMxhuoDYx6i11ePytECAk9QK" data-chain="bitcoin">Bitcoin</button>
+                                </div>
+                            </div>
+
+                            <!-- Blockchain Selection -->
+                            <div class="form-group">
+                                <label for="blockchain" class="form-label">Blockchain Network</label>
+                                <select id="blockchain" name="blockchain" class="form-control" required>
+                                    <option value="">Select blockchain network</option>
+                                    <optgroup label="🔥 Popular EVM Chains (Single API Key!)">
+                                        <option value="ethereum" data-color="#627EEA">Ethereum (ETH)</option>
+                                        <option value="base" data-color="#0052FF">Base (ETH)</option>
+                                        <option value="arbitrum" data-color="#28A0F0">Arbitrum (ETH)</option>
+                                        <option value="optimism" data-color="#FF0420">Optimism (ETH)</option>
+                                        <option value="polygon" data-color="#8247E5">Polygon (MATIC)</option>
+                                        <option value="bsc" data-color="#F3BA2F">BNB Smart Chain (BNB)</option>
+                                        <option value="avalanche" data-color="#E84142">Avalanche (AVAX)</option>
+                                    </optgroup>
+                                    <optgroup label="⚡ Layer 2 Solutions">
+                                        <option value="blast" data-color="#FCFC03">Blast (ETH)</option>
+                                        <option value="linea" data-color="#121212">Linea (ETH)</option>
+                                        <option value="scroll" data-color="#FFEEDA">Scroll (ETH)</option>
+                                        <option value="zksync" data-color="#8C8DFC">zkSync Era (ETH)</option>
+                                    </optgroup>
+                                    <optgroup label="🌐 Other Networks">
+                                        <option value="solana" data-color="#00D18C">Solana (SOL)</option>
+                                        <option value="bitcoin" data-color="#F7931A">Bitcoin (BTC)</option>
+                                        <option value="cardano" data-color="#0033AD">Cardano (ADA)</option>
+                                        <option value="tron" data-color="#FF060A">TRON (TRX)</option>
+                                    </optgroup>
+                                </select>
+                                <small style="color: var(--color-text-secondary); margin-top: 0.5rem; display: block;">
+                                    ✨ Now supporting 50+ EVM chains with one API key!
+                                </small>
+                            </div>
+
+                            <!-- Date Range -->
+                            <div class="form-group date-range">
+                                <div class="date-input-group">
+                                    <label for="from-date" class="form-label">From Date</label>
+                                    <input type="date" id="from-date" name="from-date" class="form-control" required>
+                                </div>
+                                <div class="date-input-group">
+                                    <label for="to-date" class="form-label">To Date</label>
+                                    <input type="date" id="to-date" name="to-date" class="form-control" required>
+                                </div>
+                            </div>
+
+                            <!-- Action Buttons -->
+                            <div class="form-actions">
+                                <button type="submit" class="btn btn--primary btn--lg" id="analyze-btn">
+                                    <span class="btn-text">Analyze Balance</span>
+                                    <span class="btn-loader" id="analyze-loader"></span>
+                                </button>
+                                <button type="button" class="btn btn--outline btn--lg" id="reset-btn">
+                                    Reset Form
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Results Dashboard -->
+            <section class="results-dashboard" id="results-dashboard" style="display: none;">
+                <!-- Summary Cards -->
+                <div class="summary-section">
+                    <h2 class="section-title">Balance Overview</h2>
+                    <div class="summary-grid">
+                        <div class="summary-card" style="background: var(--color-bg-1);">
+                            <div class="summary-card__icon">💰</div>
+                            <div class="summary-card__content">
+                                <div class="summary-card__label">Current Balance</div>
+                                <div class="summary-card__value" id="current-balance">0.00 ETH</div>
+                                <div class="summary-card__usd" id="current-balance-usd">$0.00</div>
+                            </div>
+                        </div>
+                        <div class="summary-card" style="background: var(--color-bg-2);">
+                            <div class="summary-card__icon">📊</div>
+                            <div class="summary-card__content">
+                                <div class="summary-card__label">Total Transactions</div>
+                                <div class="summary-card__value" id="total-transactions">0</div>
+                                <div class="summary-card__subtitle" id="date-range-display">In selected range</div>
+                            </div>
+                        </div>
+                        <div class="summary-card" style="background: var(--color-bg-3);">
+                            <div class="summary-card__icon">💱</div>
+                            <div class="summary-card__content">
+                                <div class="summary-card__label">Total Volume</div>
+                                <div class="summary-card__value" id="total-volume">0.00 ETH</div>
+                                <div class="summary-card__usd" id="total-volume-usd">$0.00</div>
+                            </div>
+                        </div>
+                        <div class="summary-card" style="background: var(--color-bg-4);">
+                            <div class="summary-card__icon">📈</div>
+                            <div class="summary-card__content">
+                                <div class="summary-card__label">Net Change</div>
+                                <div class="summary-card__value" id="net-change">+0.00 ETH</div>
+                                <div class="summary-card__percentage" id="net-change-percentage">0.00%</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Charts Section -->
+                <div class="charts-section">
+                    <h2 class="section-title">Analytics</h2>
+                    <div class="charts-grid">
+                        <div class="chart-container">
+                            <h3 class="chart-title">Balance Over Time</h3>
+                            <div class="chart-wrapper">
+                                <canvas id="balance-chart"></canvas>
+                            </div>
+                        </div>
+                        <div class="chart-container">
+                            <h3 class="chart-title">Daily Transaction Volume</h3>
+                            <div class="chart-wrapper">
+                                <canvas id="volume-chart"></canvas>
+                            </div>
+                        </div>
+                        <div class="chart-container">
+                            <h3 class="chart-title">Transaction Types</h3>
+                            <div class="chart-wrapper">
+                                <canvas id="type-chart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Transaction History -->
+                <div class="transactions-section">
+                    <div class="transactions-header">
+                        <h2 class="section-title">Transaction History</h2>
+                        <div class="transaction-filters">
+                            <select id="type-filter" class="form-control filter-select">
+                                <option value="">All Types</option>
+                                <option value="Transfer">Transfer</option>
+                                <option value="Swap">Swap</option>
+                                <option value="Deposit">Deposit</option>
+                                <option value="Withdrawal">Withdrawal</option>
+                                <option value="Stake">Stake</option>
+                                <option value="Unstake">Unstake</option>
+                            </select>
+                            <input type="text" id="search-filter" class="form-control filter-input" placeholder="Search transactions...">
+                        </div>
+                    </div>
+                    
+                    <div class="table-container">
+                        <table class="transaction-table" id="transaction-table">
+                            <thead>
+                                <tr>
+                                    <th class="sortable" data-sort="date">Date <span class="sort-arrow">↕</span></th>
+                                    <th class="sortable" data-sort="hash">Transaction Hash <span class="sort-arrow">↕</span></th>
+                                    <th class="sortable" data-sort="type">Type <span class="sort-arrow">↕</span></th>
+                                    <th class="sortable" data-sort="direction">From/To <span class="sort-arrow">↕</span></th>
+                                    <th class="sortable" data-sort="amount">Amount <span class="sort-arrow">↕</span></th>
+                                    <th class="sortable" data-sort="token">Token <span class="sort-arrow">↕</span></th>
+                                    <th class="sortable" data-sort="usd">USD Value <span class="sort-arrow">↕</span></th>
+                                    <th class="sortable" data-sort="status">Status <span class="sort-arrow">↕</span></th>
+                                </tr>
+                            </thead>
+                            <tbody id="transaction-tbody">
+                                <!-- Transactions will be populated here -->
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Pagination -->
+                    <div class="pagination" id="pagination">
+                        <button class="pagination-btn" id="prev-btn">← Previous</button>
+                        <div class="pagination-info">
+                            <span id="page-info">Page 1 of 1</span>
+                        </div>
+                        <button class="pagination-btn" id="next-btn">Next →</button>
+                    </div>
+                </div>
+
+                <!-- Export Section -->
+                <div class="export-section">
+                    <h2 class="section-title">💰 Export Account Statement</h2>
+                    <div class="export-options">
+                        <div class="export-card">
+                            <div class="export-card__icon">📄</div>
+                            <div class="export-card__content">
+                                <h3>PDF Report with USD & AED</h3>
+                                <p><strong>Professional account statement</strong> with automatic currency conversions to USD and AED (د.إ)</p>
+                                <ul style="font-size: 12px; margin: 10px 0; padding-left: 20px; text-align: left;">
+                                    <li>Account balance in crypto, USD, AED</li>
+                                    <li>Transaction history with fiat values</li>
+                                    <li>Summary statistics (total in/out)</li>
+                                    <li>Real-time exchange rates</li>
+                                </ul>
+                                <button class="btn btn--primary" id="export-pdf-btn">
+                                    <span class="btn-text">💵 Export PDF (USD/AED)</span>
+                                    <span class="btn-loader" id="pdf-loader"></span>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="export-card">
+                            <div class="export-card__icon">📊</div>
+                            <div class="export-card__content">
+                                <h3>CSV Data Export</h3>
+                                <p>Raw transaction data for spreadsheets</p>
+                                <button class="btn btn--primary" id="export-csv-btn">
+                                    <span class="btn-text">Export CSV</span>
+                                    <span class="btn-loader" id="csv-loader"></span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-section">
+                    <h3>Supported Networks</h3>
+                    <div class="network-list">
+                        <span class="network-tag" style="background: #627EEA20; color: #627EEA;">Ethereum</span>
+                        <span class="network-tag" style="background: #8247E520; color: #8247E5;">Polygon</span>
+                        <span class="network-tag" style="background: #F3BA2F20; color: #F3BA2F;">BNB Chain</span>
+                        <span class="network-tag" style="background: #28A0F020; color: #28A0F0;">Arbitrum</span>
+                        <span class="network-tag" style="background: #FF042020; color: #FF0420;">Optimism</span>
+                        <span class="network-tag" style="background: #E8414220; color: #E84142;">Avalanche</span>
+                        <span class="network-tag" style="background: #00D18C20; color: #00D18C;">Solana</span>
+                        <span class="network-tag" style="background: #F7931A20; color: #F7931A;">Bitcoin</span>
+                    </div>
+                </div>
+                <div class="footer-section">
+                    <h3>Disclaimer</h3>
+                    <p>This tool provides blockchain data for informational purposes only. Always verify transactions independently. Data accuracy depends on third-party APIs.</p>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p>&copy; 2024 Blockchain Balance Screener. Built for DeFi professionals.</p>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Toast Notifications -->
+    <div class="toast-container" id="toast-container"></div>
+
+    <!-- Load Chart.js and dependencies -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    
+    <!-- Load API service and main app -->
+    <script src="api-service-new.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>

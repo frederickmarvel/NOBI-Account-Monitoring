@@ -1,0 +1,97 @@
+📦 Blockchain Monitoring (ROOT)
+│
+├── 📱 frontend/                    Frontend Web Application
+│   ├── index.html                 Main UI (299 lines)
+│   ├── app.js                     Chart rendering & logic
+│   ├── api-service-new.js         Backend API client
+│   └── style.css                  UI styling
+│
+├── �� backend/                     Python Flask Backend API
+│   ├── backend.py                 Flask server (port 8085)
+│   ├── blockchain_service.py      Blockchain data fetching
+│   │                              • Token whitelist (50+ tokens)
+│   │                              • Etherscan V2 API (50+ chains)
+│   │                              • Spam filtering
+│   ├── currency_service.py        Currency conversion
+│   │                              • CoinGecko API integration
+│   │                              • USD/AED conversion
+│   ├── pdf_generator.py           PDF report generation
+│   │                              • ReportLab library
+│   │                              • Professional formatting
+│   │                              • Complete transaction history
+│   └── requirements.txt           Python dependencies
+│
+├── 📚 docs/                        Documentation
+│   ├── BACKEND_README.md          Backend API reference
+│   ├── DEPLOYMENT.md              Production deployment guide
+│   ├── PDF_EXPORT_README.md       PDF generation system
+│   ├── TOKEN_FILTERING_README.md  Token whitelist configuration
+│   └── V2_UPGRADE.md              Etherscan V2 migration
+│
+├── 🗄️ archive/                    Deprecated Files (Safe to delete)
+│   ├── test.html                  Old testing interface
+│   ├── QUICKSTART_OLD.md          Outdated quick start
+│   ├── FIXED_COMPLETE.md          Old changelog
+│   └── README_OLD.md              Previous README
+│
+├── 🔧 Configuration Files
+│   ├── .env                       API keys (git-ignored)
+│   ├── .env.example               Environment template
+│   └── .gitignore                 Git ignore rules
+│
+├── 📄 Documentation Files
+│   ├── README.md                  Main documentation ⭐
+│   ├── FOLDER_STRUCTURE.md        Structure guide
+│   └── REORGANIZATION.md          Before/after comparison
+│
+├── 🚀 Scripts
+│   └── start.sh                   Quick start script
+│
+└── 📊 PROJECT_STRUCTURE.txt       This file!
+
+═══════════════════════════════════════════════════════════════
+
+📈 PROJECT STATS
+─────────────────
+Frontend Files:     4 files
+Backend Files:      5 files  
+Documentation:      5 files in docs/
+Archived Files:     4 files
+Root Files:         6 essential files
+Total Folders:      4 organized folders
+
+═══════════════════════════════════════════════════════════════
+
+🎯 KEY FEATURES
+─────────────────
+✅ Multi-chain support (50+ blockchains)
+✅ PDF account statements with USD/AED conversion
+✅ Token spam filtering (50+ whitelisted tokens)
+✅ Complete transaction history (no limits)
+✅ Real-time cryptocurrency prices
+✅ Interactive charts with Chart.js
+✅ Professional report generation
+
+═══════════════════════════════════════════════════════════════
+
+🚀 QUICK START
+─────────────────
+1. Add Etherscan API key to .env
+2. Run: ./start.sh
+3. Open: frontend/index.html
+4. Generate PDF account statement
+
+═══════════════════════════════════════════════════════════════
+
+📡 API ENDPOINTS
+─────────────────
+Backend runs on: http://localhost:8085
+
+GET  /api/health
+GET  /api/balance/<blockchain>/<address>
+GET  /api/transactions/<blockchain>/<address>?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD
+GET  /api/export/pdf/<blockchain>/<address>?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD
+
+═══════════════════════════════════════════════════════════════
+
+🏆 RESULT: CLEAN, ORGANIZED, PROFESSIONAL STRUCTURE! ✨

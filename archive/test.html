@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API Configuration Test - Blockchain Balance Screener</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 900px;
+            margin: 40px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .test-card {
+            background: white;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #1FB8CD;
+        }
+        h2 {
+            color: #333;
+            border-bottom: 2px solid #1FB8CD;
+            padding-bottom: 10px;
+        }
+        .status {
+            padding: 8px 16px;
+            border-radius: 4px;
+            display: inline-block;
+            margin: 10px 0;
+            font-weight: 500;
+        }
+        .status-success {
+            background: #d4edda;
+            color: #155724;
+        }
+        .status-error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        .status-warning {
+            background: #fff3cd;
+            color: #856404;
+        }
+        .status-info {
+            background: #d1ecf1;
+            color: #0c5460;
+        }
+        button {
+            background: #1FB8CD;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 5px;
+        }
+        button:hover {
+            background: #1aa0b4;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        pre {
+            background: #f4f4f4;
+            padding: 15px;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+        .test-result {
+            margin: 10px 0;
+            padding: 10px;
+            border-left: 4px solid #1FB8CD;
+            background: #f9f9f9;
+        }
+        .error-msg {
+            color: #dc3545;
+            font-weight: bold;
+        }
+        .success-msg {
+            color: #28a745;
+            font-weight: bold;
+        }
+        .code {
+            background: #f4f4f4;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔧 Blockchain Balance Screener - Configuration Test</h1>
+    
+    <div class="test-card">
+        <h2>Step 1: API Configuration Check</h2>
+        <p>This tool will verify that your API keys are properly configured.</p>
+        <button onclick="checkConfiguration()">Check Configuration</button>
+        <div id="config-result"></div>
+    </div>
+
+    <div class="test-card">
+        <h2>Step 2: Test Blockchain Connections</h2>
+        <p>Test real API calls to blockchain explorers (uses actual API quota).</p>
+        
+        <h3>Ethereum</h3>
+        <button onclick="testEthereum()">Test Ethereum API</button>
+        <div id="eth-result"></div>
+
+        <h3>Polygon</h3>
+        <button onclick="testPolygon()">Test Polygon API</button>
+        <div id="polygon-result"></div>
+
+        <h3>BSC</h3>
+        <button onclick="testBSC()">Test BSC API</button>
+        <div id="bsc-result"></div>
+
+        <h3>Bitcoin</h3>
+        <button onclick="testBitcoin()">Test Bitcoin API</button>
+        <div id="btc-result"></div>
+    </div>
+
+    <div class="test-card">
+        <h2>Step 3: Test Sample Analysis</h2>
+        <p>Run a full analysis on a test address to verify everything works.</p>
+        <button onclick="runSampleAnalysis()">Run Sample Analysis</button>
+        <div id="analysis-result"></div>
+    </div>
+
+    <div class="test-card">
+        <h2>📚 Next Steps</h2>
+        <ol>
+            <li>If all tests pass ✅, your app is ready for production!</li>
+            <li>If tests fail ❌, check the error messages above</li>
+            <li>Make sure you've added your API keys in <span class="code">config.js</span></li>
+            <li>Open <span class="code">index.html</span> to use the full application</li>
+        </ol>
+    </div>
+
+    <script src="config.js"></script>
+    <script src="api-service.js"></script>
+    
+    <script>
+        function checkConfiguration() {
+            const resultDiv = document.getElementById('config-result');
+            let html = '<h3>Configuration Status:</h3>';
+            
+            // Check if unified Etherscan API key is configured
+            const etherscanKey = typeof ETHERSCAN_API_KEY !== 'undefined' ? ETHERSCAN_API_KEY : null;
+            
+            if (etherscanKey && !etherscanKey.includes('Your') && !etherscanKey.includes('APIKey') && etherscanKey.length > 20) {
+                html += '<div class="status status-success">✅ Etherscan V2 API Key: Configured</div><br>';
+                html += '<div class="status status-info">🎉 This single key works for 50+ EVM chains including:</div>';
+                html += '<ul style="margin-left: 20px; margin-top: 10px;">';
+                html += '<li>Ethereum, Base, Arbitrum, Optimism</li>';
+                html += '<li>Polygon, BSC, Avalanche</li>';
+                html += '<li>Blast, Linea, Scroll, zkSync Era</li>';
+                html += '<li>And 40+ more chains!</li>';
+                html += '</ul>';
+                html += '<div class="success-msg"><br>✅ Ready for production across all supported EVM chains!</div>';
+            } else {
+                html += '<div class="error-msg">❌ Etherscan API key NOT configured!</div><br>';
+                html += '<p><strong>Quick fix:</strong></p>';
+                html += '<ol style="margin-left: 20px;">';
+                html += '<li>Get a free Etherscan API key from <a href="https://etherscan.io/myapikey" target="_blank">https://etherscan.io/myapikey</a></li>';
+                html += '<li>Open <code>config.js</code></li>';
+                html += '<li>Replace <code>ETHERSCAN_API_KEY</code> value with your key</li>';
+                html += '<li>Save and refresh this page</li>';
+                html += '</ol>';
+            }
+            
+            resultDiv.innerHTML = html;
+        }
+
+        async function testEthereum() {
+            const resultDiv = document.getElementById('eth-result');
+            resultDiv.innerHTML = '<div class="status status-info">Testing Ethereum API...</div>';
+            
+            try {
+                const testAddress = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'; // Vitalik's address
+                const config = API_CONFIG.ethereum;
+                
+                if (!config.apiKey || config.apiKey.includes('Your')) {
+                    throw new Error('Ethereum API key not configured');
+                }
+                
+                const url = `${config.apiUrl}?module=account&action=balance&address=${testAddress}&tag=latest&apikey=${config.apiKey}`;
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                if (data.status === '1' && data.result) {
+                    const balance = (parseInt(data.result) / 1e18).toFixed(4);
+                    resultDiv.innerHTML = `
+                        <div class="success-msg">✅ Ethereum API works!</div>
+                        <div class="test-result">Test address balance: ${balance} ETH</div>
+                    `;
+                } else {
+                    throw new Error(data.message || 'Invalid response from Etherscan');
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="error-msg">❌ Error: ${error.message}</div>`;
+            }
+        }
+
+        async function testPolygon() {
+            const resultDiv = document.getElementById('polygon-result');
+            resultDiv.innerHTML = '<div class="status status-info">Testing Polygon API...</div>';
+            
+            try {
+                const testAddress = '0x5350E1068f0E138ff306990B16fA4910d970c692';
+                const config = API_CONFIG.polygon;
+                
+                if (!config.apiKey || config.apiKey.includes('Your')) {
+                    throw new Error('Polygon API key not configured');
+                }
+                
+                const url = `${config.apiUrl}?module=account&action=balance&address=${testAddress}&tag=latest&apikey=${config.apiKey}`;
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                if (data.status === '1' && data.result) {
+                    const balance = (parseInt(data.result) / 1e18).toFixed(4);
+                    resultDiv.innerHTML = `
+                        <div class="success-msg">✅ Polygon API works!</div>
+                        <div class="test-result">Test address balance: ${balance} MATIC</div>
+                    `;
+                } else {
+                    throw new Error(data.message || 'Invalid response from Polygonscan');
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="error-msg">❌ Error: ${error.message}</div>`;
+            }
+        }
+
+        async function testBSC() {
+            const resultDiv = document.getElementById('bsc-result');
+            resultDiv.innerHTML = '<div class="status status-info">Testing BSC API...</div>';
+            
+            try {
+                const testAddress = '0x8894E0a0c962CB723c1976a4421c95949bE2D4E3';
+                const config = API_CONFIG.bsc;
+                
+                if (!config.apiKey || config.apiKey.includes('Your')) {
+                    throw new Error('BSC API key not configured');
+                }
+                
+                const url = `${config.apiUrl}?module=account&action=balance&address=${testAddress}&tag=latest&apikey=${config.apiKey}`;
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                if (data.status === '1' && data.result) {
+                    const balance = (parseInt(data.result) / 1e18).toFixed(4);
+                    resultDiv.innerHTML = `
+                        <div class="success-msg">✅ BSC API works!</div>
+                        <div class="test-result">Test address balance: ${balance} BNB</div>
+                    `;
+                } else {
+                    throw new Error(data.message || 'Invalid response from BscScan');
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="error-msg">❌ Error: ${error.message}</div>`;
+            }
+        }
+
+        async function testBitcoin() {
+            const resultDiv = document.getElementById('btc-result');
+            resultDiv.innerHTML = '<div class="status status-info">Testing Bitcoin API...</div>';
+            
+            try {
+                const testAddress = '1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa'; // First Bitcoin address ever
+                const url = `https://blockchain.info/q/addressbalance/${testAddress}`;
+                const response = await fetch(url);
+                const balance = await response.text();
+                
+                resultDiv.innerHTML = `
+                    <div class="success-msg">✅ Bitcoin API works!</div>
+                    <div class="test-result">Test address balance: ${(parseInt(balance) / 1e8).toFixed(8)} BTC</div>
+                    <small>Note: Bitcoin uses public APIs, no key required</small>
+                `;
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="error-msg">❌ Error: ${error.message}</div>`;
+            }
+        }
+
+        async function runSampleAnalysis() {
+            const resultDiv = document.getElementById('analysis-result');
+            resultDiv.innerHTML = '<div class="status status-info">Running sample analysis... This may take 10-15 seconds...</div>';
+            
+            try {
+                // Check if at least one API is configured
+                const ethereum = API_CONFIG.ethereum;
+                if (!ethereum.apiKey || ethereum.apiKey.includes('Your')) {
+                    throw new Error('Please configure at least the Ethereum API key before running analysis');
+                }
+                
+                const testAddress = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045';
+                const fromDate = new Date();
+                fromDate.setDate(fromDate.getDate() - 30);
+                const toDate = new Date();
+                
+                // Fetch transactions
+                const transactions = await window.BlockchainAPI.getTransactions(
+                    testAddress,
+                    'ethereum',
+                    fromDate.toISOString().split('T')[0],
+                    toDate.toISOString().split('T')[0]
+                );
+                
+                resultDiv.innerHTML = `
+                    <div class="success-msg">✅ Sample analysis completed successfully!</div>
+                    <div class="test-result">
+                        <strong>Found ${transactions.length} transactions</strong><br>
+                        Address: ${testAddress}<br>
+                        Network: Ethereum<br>
+                        Date Range: Last 30 days<br>
+                        <br>
+                        <strong>Sample Transaction:</strong><br>
+                        ${transactions.length > 0 ? `
+                            Type: ${transactions[0].type}<br>
+                            Amount: ${transactions[0].amount.toFixed(6)} ETH<br>
+                            Status: ${transactions[0].status}<br>
+                            Hash: ${transactions[0].hash.substring(0, 20)}...
+                        ` : 'No transactions in this period'}
+                    </div>
+                    <div class="status status-success">
+                        🎉 Your application is ready for production!<br>
+                        Open <strong>index.html</strong> to use the full interface.
+                    </div>
+                `;
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="error-msg">❌ Analysis failed: ${error.message}</div>
+                    <div class="test-result">
+                        <strong>Troubleshooting:</strong><br>
+                        1. Make sure your API keys are configured in config.js<br>
+                        2. Check your internet connection<br>
+                        3. Verify the API key is valid on Etherscan.io<br>
+                        4. Check browser console (F12) for detailed errors
+                    </div>
+                `;
+            }
+        }
+
+        // Auto-run configuration check on page load
+        window.addEventListener('load', () => {
+            setTimeout(checkConfiguration, 500);
+        });
+    </script>
+</body>
+</html>
