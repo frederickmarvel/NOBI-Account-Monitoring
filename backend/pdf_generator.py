@@ -87,26 +87,20 @@ class PDFReportGenerator:
         
         # Account Information
         account_info = self._create_account_info_table(
-            address, blockchain, balance, crypto_symbol, prices, date_range
+            address, blockchain, date_range
         )
         elements.append(account_info)
         elements.append(Spacer(1, 0.2*inch))
         
-        # Token Balances (if available)
-        if token_balances:
-            token_heading = Paragraph("Token Holdings", self.styles['CustomHeading'])
-            elements.append(token_heading)
-            elements.append(Spacer(1, 0.1*inch))
-            
-            token_table = self._create_token_balances_table(token_balances)
-            elements.append(token_table)
-            elements.append(Spacer(1, 0.2*inch))
+        # Combined Portfolio Holdings (Native + Tokens in one table)
+        portfolio_heading = Paragraph("Portfolio Holdings", self.styles['CustomHeading'])
+        elements.append(portfolio_heading)
+        elements.append(Spacer(1, 0.1*inch))
         
-        # Total Account Value
-        total_value = self._create_total_value_table(
+        portfolio_table = self._create_combined_portfolio_table(
             balance, crypto_symbol, prices, token_balances
         )
-        elements.append(total_value)
+        elements.append(portfolio_table)
         elements.append(Spacer(1, 0.3*inch))
         
         # Token Filter Info
@@ -150,23 +144,14 @@ class PDFReportGenerator:
         return pdf_bytes
     
     def _create_account_info_table(
-        self, address: str, blockchain: str, balance: float,
-        crypto_symbol: str, prices: Dict, date_range: Dict
+        self, address: str, blockchain: str, date_range: Dict
     ) -> Table:
         """Create account information table"""
-        balance_usd = balance * prices['usd']
-        balance_aed = balance * prices['aed']
-        
         data = [
             ['ACCOUNT DETAILS', ''],
             ['Blockchain', blockchain.upper()],
             ['Wallet Address', f"{address[:10]}...{address[-8:]}"],
             ['Statement Period', f"{date_range['start']} to {date_range['end']}"],
-            ['', ''],
-            [f'{crypto_symbol} BALANCE', ''],
-            [f'Amount', f"{balance:.6f} {crypto_symbol}"],
-            ['USD Value', f"${balance_usd:,.2f}"],
-            ['AED Value', f"AED {balance_aed:,.2f}"],
         ]
         
         table = Table(data, colWidths=[2.5*inch, 4*inch])
@@ -177,104 +162,105 @@ class PDFReportGenerator:
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
             ('FONTSIZE', (0, 0), (-1, 0), 12),
             ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-            ('BACKGROUND', (0, 5), (-1, 5), colors.HexColor('#ecf0f1')),
-            ('FONTNAME', (0, 5), (-1, 5), 'Helvetica-Bold'),
-            ('BACKGROUND', (0, 1), (-1, 4), colors.white),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-            ('FONTNAME', (0, 6), (0, 8), 'Helvetica-Bold'),
-            ('ALIGN', (1, 6), (1, 8), 'RIGHT'),
-        ]))
-        
-        return table
-    
-    def _create_token_balances_table(self, token_balances: Dict[str, Dict]) -> Table:
-        """Create token balances table"""
-        data = [
-            ['Token', 'Balance', 'USD Value', 'AED Value']
-        ]
-        
-        # Sort tokens by USD value (highest first)
-        sorted_tokens = sorted(
-            token_balances.items(),
-            key=lambda x: x[1]['value_usd'],
-            reverse=True
-        )
-        
-        for token_symbol, token_info in sorted_tokens:
-            data.append([
-                f"{token_symbol}",
-                f"{token_info['balance']:.6f}",
-                f"${token_info['value_usd']:,.2f}",
-                f"AED {token_info['value_aed']:,.2f}"
-            ])
-        
-        table = Table(data, colWidths=[1.5*inch, 2*inch, 1.5*inch, 1.5*inch])
-        table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#27ae60')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, 0), 11),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
             ('BACKGROUND', (0, 1), (-1, -1), colors.white),
             ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-            ('FONTNAME', (0, 1), (0, -1), 'Helvetica-Bold'),
-            ('ALIGN', (1, 1), (-1, -1), 'RIGHT'),
-            ('FONTSIZE', (0, 1), (-1, -1), 10),
         ]))
         
         return table
     
-    def _create_total_value_table(
+    def _create_combined_portfolio_table(
         self, balance: float, crypto_symbol: str, prices: Dict,
         token_balances: Dict[str, Dict] = None
     ) -> Table:
-        """Create total account value table"""
+        """Create combined portfolio table with native token and all ERC-20 tokens"""
         # Calculate native token value
         native_value_usd = balance * prices['usd']
         native_value_aed = balance * prices['aed']
         
-        # Calculate token values
-        token_value_usd = 0
-        token_value_aed = 0
-        if token_balances:
-            for token_info in token_balances.values():
-                token_value_usd += token_info['value_usd']
-                token_value_aed += token_info['value_aed']
-        
-        # Calculate totals
-        total_value_usd = native_value_usd + token_value_usd
-        total_value_aed = native_value_aed + token_value_aed
-        
+        # Header row
         data = [
-            ['TOTAL ACCOUNT VALUE', '', ''],
-            ['Asset Type', 'USD Value', 'AED Value'],
-            [f'{crypto_symbol} Balance', f'${native_value_usd:,.2f}', f'AED {native_value_aed:,.2f}'],
+            ['Asset', 'Balance', 'USD Value', 'AED Value', '% of Portfolio']
         ]
         
+        # Calculate total portfolio value first
+        total_value_usd = native_value_usd
         if token_balances:
-            data.append(['Token Holdings', f'${token_value_usd:,.2f}', f'AED {token_value_aed:,.2f}'])
+            for token_info in token_balances.values():
+                total_value_usd += token_info['value_usd']
         
-        data.append(['', '', ''])
-        data.append(['GRAND TOTAL', f'${total_value_usd:,.2f}', f'AED {total_value_aed:,.2f}'])
+        # Add native token as first row
+        native_percentage = (native_value_usd / total_value_usd * 100) if total_value_usd > 0 else 0
+        data.append([
+            f"{crypto_symbol}",
+            f"{balance:.6f}",
+            f"${native_value_usd:,.2f}",
+            f"AED {native_value_aed:,.2f}",
+            f"{native_percentage:.1f}%"
+        ])
         
-        table = Table(data, colWidths=[2.5*inch, 2*inch, 2*inch])
+        # Add all tokens sorted by USD value
+        if token_balances:
+            sorted_tokens = sorted(
+                token_balances.items(),
+                key=lambda x: x[1]['value_usd'],
+                reverse=True
+            )
+            
+            for token_symbol, token_info in sorted_tokens:
+                token_percentage = (token_info['value_usd'] / total_value_usd * 100) if total_value_usd > 0 else 0
+                data.append([
+                    f"{token_symbol}",
+                    f"{token_info['balance']:.6f}",
+                    f"${token_info['value_usd']:,.2f}",
+                    f"AED {token_info['value_aed']:,.2f}",
+                    f"{token_percentage:.1f}%"
+                ])
+        
+        # Add separator row
+        data.append(['', '', '', '', ''])
+        
+        # Calculate total values
+        total_value_aed = total_value_usd * 3.67
+        
+        # Add total row
+        data.append([
+            'TOTAL PORTFOLIO VALUE',
+            '',
+            f"${total_value_usd:,.2f}",
+            f"AED {total_value_aed:,.2f}",
+            '100%'
+        ])
+        
+        table = Table(data, colWidths=[1.5*inch, 1.3*inch, 1.3*inch, 1.3*inch, 1*inch])
         table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#e74c3c')),
+            # Header styling
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c3e50')),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, 0), 12),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-            ('BACKGROUND', (0, 1), (-1, 1), colors.HexColor('#ecf0f1')),
-            ('FONTNAME', (0, 1), (-1, 1), 'Helvetica-Bold'),
-            ('BACKGROUND', (0, 2), (-1, 3 if token_balances else 2), colors.white),
+            ('FONTSIZE', (0, 0), (-1, 0), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+            
+            # Body styling
+            ('BACKGROUND', (0, 1), (-1, -3), colors.white),
             ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-            ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#f39c12')),
+            ('FONTSIZE', (0, 1), (-1, -3), 9),
+            ('ALIGN', (0, 1), (0, -3), 'LEFT'),
+            ('FONTNAME', (0, 1), (0, -3), 'Helvetica-Bold'),
+            ('ALIGN', (1, 1), (-1, -3), 'RIGHT'),
+            
+            # Separator row
+            ('BACKGROUND', (0, -2), (-1, -2), colors.HexColor('#ecf0f1')),
+            ('LINEABOVE', (0, -2), (-1, -2), 1.5, colors.grey),
+            
+            # Total row styling
+            ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#e74c3c')),
             ('TEXTCOLOR', (0, -1), (-1, -1), colors.whitesmoke),
             ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, -1), (-1, -1), 12),
-            ('ALIGN', (1, 2), (-1, -1), 'RIGHT'),
+            ('FONTSIZE', (0, -1), (-1, -1), 11),
+            ('ALIGN', (0, -1), (0, -1), 'LEFT'),
+            ('ALIGN', (1, -1), (-1, -1), 'RIGHT'),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
         ]))
         
         return table

@@ -49,26 +49,25 @@ Enhanced `export_pdf` endpoint:
 ### 4. Professional PDF Layout
 **File: `backend/pdf_generator.py`**
 
-Redesigned PDF with three new sections:
+Redesigned PDF with a clean, unified layout:
 
-#### a. Enhanced Account Details
-- More direct and professional labeling
-- Clear balance presentation with USD/AED values
-- Clean header: "ACCOUNT DETAILS"
+#### a. Simplified Account Details
+- Blockchain, wallet address, and statement period only
+- No duplicate balance information (shown in portfolio table)
 
-#### b. Token Holdings Table (New)
-- Displays all ERC-20 token balances
-- Shows balance, USD value, AED value for each token
-- Sorted by USD value (highest first)
-- Green header for visual distinction
+#### b. Combined Portfolio Holdings Table (New)
+- **ALL assets in ONE table** - Native token + all ERC-20 tokens
+- Columns: Asset | Balance | USD Value | AED Value | % of Portfolio
+- Native token displayed first (e.g., ETH)
+- ERC-20 tokens sorted by USD value (highest first)
+- Portfolio percentage shows allocation
+- **TOTAL PORTFOLIO VALUE** row at bottom (highlighted in red)
+- Professional color scheme with dark header
 
-#### c. Total Account Value Table (New)
-- Shows breakdown:
-  - Native token balance (ETH, MATIC, etc.) in USD/AED
-  - Token holdings total in USD/AED
-  - **GRAND TOTAL** in USD/AED (highlighted in orange)
-- Red header for importance
-- Bold, large font for grand total
+#### c. Transaction Summary & History
+- Summary statistics for the period
+- Complete transaction history
+- Filtered to show only whitelisted tokens
 
 ## PDF Report Structure
 
@@ -80,31 +79,32 @@ Redesigned PDF with three new sections:
 │  - Blockchain: ETHEREUM             │
 │  - Wallet Address: 0x1234...5678    │
 │  - Statement Period: 2024-01-01 to  │
-│  - ETH BALANCE: 2.5 ETH             │
-│    USD Value: $5,000.00             │
-│    AED Value: AED 18,350.00         │
 ├─────────────────────────────────────┤
-│  Token Holdings                     │
-│  ┌────────┬──────────┬────────────┐ │
-│  │ Token  │ Balance  │ USD Value  │ │
-│  ├────────┼──────────┼────────────┤ │
-│  │ USDT   │ 1000.00  │ $1,000.00  │ │
-│  │ USDC   │ 500.00   │ $500.00    │ │
-│  │ WBTC   │ 0.05     │ $2,500.00  │ │
-│  │ WETH   │ 1.00     │ $2,000.00  │ │
-│  └────────┴──────────┴────────────┘ │
-├─────────────────────────────────────┤
-│  TOTAL ACCOUNT VALUE                │
-│  - ETH Balance: $5,000.00           │
-│  - Token Holdings: $6,000.00        │
-│  - GRAND TOTAL: $11,000.00          │
-│                 AED 40,370.00       │
+│  Portfolio Holdings                 │
+│  ┌────────┬──────────┬────────────┬────────────┬─────┐
+│  │ Asset  │ Balance  │ USD Value  │ AED Value  │  %  │
+│  ├────────┼──────────┼────────────┼────────────┼─────┤
+│  │ ETH    │ 2.500000 │ $5,000.00  │ AED 18,350 │ 45.5│
+│  │ WBTC   │ 0.050000 │ $2,500.00  │ AED 9,175  │ 22.7│
+│  │ WETH   │ 1.000000 │ $2,000.00  │ AED 7,340  │ 18.2│
+│  │ USDT   │ 1000.00  │ $1,000.00  │ AED 3,670  │  9.1│
+│  │ USDC   │ 500.00   │   $500.00  │ AED 1,835  │  4.5│
+│  ├────────┼──────────┼────────────┼────────────┼─────┤
+│  │ TOTAL  │          │$11,000.00  │AED 40,370  │ 100%│
+│  └────────┴──────────┴────────────┴────────────┴─────┘
 ├─────────────────────────────────────┤
 │  Summary Statistics                 │
 │  Transaction History                │
 │  ...                                │
 └─────────────────────────────────────┘
 ```
+
+**Key Features:**
+- ✅ **Combined Table** - All assets (native + ERC-20 tokens) in ONE table
+- ✅ **Portfolio Percentage** - Shows what % each asset represents
+- ✅ **Sorted by Value** - Native token first, then tokens by USD value (highest to lowest)
+- ✅ **Professional Layout** - Clean, easy to read format
+- ✅ **Total Row** - Grand total highlighted at the bottom
 
 ## Supported Tokens
 
