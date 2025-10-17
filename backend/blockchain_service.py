@@ -455,63 +455,82 @@ class BlockchainService:
     
     def get_solana_transactions(self, address: str, start_date: str, end_date: str) -> Dict:
         """
-        Fetch Solana transactions using Solscan API v2.0
-        API Documentation: https://pro-api.solscan.io/pro-api-docs/v2.0/reference/v2-account-detail
+        Fetch Solana transactions using public Solana RPC
+        Note: Solscan Pro API v2.0 requires paid subscription, using free RPC instead
         """
-        if not self.solscan_api_key:
-            logger.warning("SOLSCAN_API_KEY not set - Solana transactions unavailable")
-            return {
-                'success': False,
-                'error': 'Solscan API key not configured',
-                'balance': '0',
-                'transactions': [],
-                'count': 0
-            }
-        
         try:
-            # Convert dates to timestamps
-            start_ts = int(datetime.strptime(start_date, '%Y-%m-%d').timestamp())
-            end_ts = int(datetime.strptime(end_date, '%Y-%m-%d').timestamp())
+            # Use public Solana RPC endpoint (FREE)
+            rpc_url = "https://api.mainnet-beta.solana.com"
             
-            # Get account balance using Solscan API v2.0
-            balance_url = f"https://pro-api.solscan.io/v2.0/account/{address}"
-            headers = {
-                'token': self.solscan_api_key,
-                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)'
+            # Get account balance
+            balance_payload = {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "getBalance",
+                "params": [address]
             }
             
             self.rate_limiter.wait_if_needed()
-            balance_response = requests.get(balance_url, headers=headers, timeout=30)
+            balance_response = requests.post(rpc_url, json=balance_payload, timeout=30)
             balance_response.raise_for_status()
             balance_data = balance_response.json()
             
-            # Get SOL balance (lamports to SOL: divide by 1e9)
-            lamports = balance_data.get('data', {}).get('lamports', 0)
-            balance = lamports / 1e9
+            # Get lamports balance
+            lamports = 0
+            if 'result' in balance_data and 'value' in balance_data['result']:
+                lamports = balance_data['result']['value']
             
-            # Get account transfers using Solscan API v2.0
-            transfers_url = f"https://pro-api.solscan.io/v2.0/account/transfer"
-            params = {
-                'address': address,
-                'page_size': 50,  # Max results per page
-                'page': 1,
-                'sort_by': 'block_time',
-                'sort_order': 'desc'
+            # Get transaction signatures
+            sig_payload = {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "getSignaturesForAddress",
+                "params": [
+                    address,
+                    {
+                        "limit": 100  # Max signatures to fetch
+                    }
+                ]
             }
             
             self.rate_limiter.wait_if_needed()
-            transfers_response = requests.get(transfers_url, headers=headers, params=params, timeout=30)
-            transfers_response.raise_for_status()
-            transfers_data = transfers_response.json()
+            sig_response = requests.post(rpc_url, json=sig_payload, timeout=30)
+            sig_response.raise_for_status()
+            sig_data = sig_response.json()
             
             # Parse transactions
             transactions = []
-            if transfers_data.get('success') and transfers_data.get('data'):
-                for tx in transfers_data['data']:
-                    # Filter by date range
-                    tx_time = tx.get('block_time', 0)
-                    if start_ts <= tx_time <= end_ts:
-                        transactions.append(self._parse_solana_tx(tx, address))
+            if 'result' in sig_data:
+                # Convert dates to timestamps
+                start_ts = int(datetime.strptime(start_date, '%Y-%m-%d').timestamp())
+                end_ts = int(datetime.strptime(end_date, '%Y-%m-%d').timestamp())
+                
+                for sig_info in sig_data['result'][:20]:  # Limit to 20 transactions to avoid timeout
+                    # Check if transaction is in date range
+                    tx_time = sig_info.get('blockTime', 0)
+                    if tx_time and start_ts <= tx_time <= end_ts:
+                        # Get transaction details
+                        tx_payload = {
+                            "jsonrpc": "2.0",
+                            "id": 1,
+                            "method": "getTransaction",
+                            "params": [
+                                sig_info['signature'],
+                                {
+                                    "encoding": "jsonParsed",
+                                    "maxSupportedTransactionVersion": 0
+                                }
+                            ]
+                        }
+                        
+                        self.rate_limiter.wait_if_needed()
+                        tx_response = requests.post(rpc_url, json=tx_payload, timeout=30)
+                        if tx_response.status_code == 200:
+                            tx_data = tx_response.json()
+                            if 'result' in tx_data and tx_data['result']:
+                                parsed_tx = self._parse_solana_tx(tx_data['result'], address, sig_info['signature'])
+                                if parsed_tx:
+                                    transactions.append(parsed_tx)
             
             logger.info(f"Found {len(transactions)} Solana transactions for {address}")
             
@@ -523,10 +542,10 @@ class BlockchainService:
             }
             
         except requests.exceptions.RequestException as e:
-            logger.error(f"Solscan API error: {str(e)}")
+            logger.error(f"Solana RPC error: {str(e)}")
             return {
                 'success': False,
-                'error': f'Solscan API error: {str(e)}',
+                'error': f'Solana RPC error: {str(e)}',
                 'balance': '0',
                 'transactions': [],
                 'count': 0
@@ -541,50 +560,82 @@ class BlockchainService:
                 'count': 0
             }
     
-    def _parse_solana_tx(self, tx: Dict, user_address: str) -> Dict:
-        """Parse Solana transaction from Solscan API"""
-        # Determine direction
-        from_address = tx.get('src', '')
-        to_address = tx.get('dst', '')
-        is_incoming = to_address.lower() == user_address.lower()
-        
-        # Get amount in SOL (convert from lamports)
-        lamports = tx.get('lamport', 0)
-        amount = lamports / 1e9
-        
-        # Get timestamp
-        block_time = tx.get('block_time', 0)
-        
-        # Determine transaction type
-        tx_type = 'SOL Transfer'
-        token_symbol = None
-        token_name = None
-        
-        # Check if it's a token transfer
-        if tx.get('token_address'):
-            tx_type = 'Token Transfer'
-            token_symbol = tx.get('token_symbol', 'Unknown')
-            token_name = tx.get('token_name', 'Unknown Token')
-            # For SPL tokens, use token_decimals if available
-            decimals = tx.get('token_decimals', 9)
-            amount = lamports / (10 ** decimals)
-        
-        return {
-            'hash': tx.get('trans_id', 'Unknown'),
-            'timestamp': block_time,
-            'date': datetime.fromtimestamp(block_time).isoformat() if block_time else 'Unknown',
-            'type': tx_type,
-            'direction': 'in' if is_incoming else 'out',
-            'from': from_address,
-            'to': to_address,
-            'amount': amount,
-            'token': token_symbol,
-            'tokenSymbol': token_symbol,
-            'tokenName': token_name,
-            'status': tx.get('status', 'Success'),
-            'gasUsed': 0,  # Solana uses different fee structure
-            'gasPrice': 0,
-            'blockNumber': tx.get('block_id', 0),
-            'confirmations': 0
-        }
+    def _parse_solana_tx(self, tx: Dict, user_address: str, signature: str) -> Dict:
+        """Parse Solana transaction from RPC response"""
+        try:
+            meta = tx.get('meta', {})
+            transaction = tx.get('transaction', {})
+            message = transaction.get('message', {})
+            
+            # Get timestamp
+            block_time = tx.get('blockTime', 0)
+            
+            # Get account keys
+            account_keys = message.get('accountKeys', [])
+            if not account_keys:
+                return None
+            
+            # Get pre and post balances
+            pre_balances = meta.get('preBalances', [])
+            post_balances = meta.get('postBalances', [])
+            
+            # Find user's account index
+            user_index = -1
+            for i, key in enumerate(account_keys):
+                key_str = key if isinstance(key, str) else key.get('pubkey', '')
+                if key_str == user_address:
+                    user_index = i
+                    break
+            
+            if user_index == -1:
+                return None
+            
+            # Calculate balance change
+            balance_change = 0
+            if user_index < len(pre_balances) and user_index < len(post_balances):
+                balance_change = post_balances[user_index] - pre_balances[user_index]
+            
+            # Determine direction
+            is_incoming = balance_change > 0
+            amount = abs(balance_change) / 1e9  # Convert lamports to SOL
+            
+            # Get fee
+            fee = meta.get('fee', 0) / 1e9
+            
+            # Try to find sender and receiver
+            from_address = ''
+            to_address = ''
+            if len(account_keys) >= 2:
+                from_key = account_keys[0] if isinstance(account_keys[0], str) else account_keys[0].get('pubkey', '')
+                to_key = account_keys[1] if isinstance(account_keys[1], str) else account_keys[1].get('pubkey', '')
+                from_address = from_key
+                to_address = to_key
+            
+            # Check if it's an error transaction
+            err = meta.get('err')
+            status = 'Failed' if err else 'Success'
+            
+            return {
+                'hash': signature,
+                'timestamp': block_time,
+                'date': datetime.fromtimestamp(block_time).isoformat() if block_time else 'Unknown',
+                'type': 'SOL Transfer',
+                'direction': 'in' if is_incoming else 'out',
+                'from': from_address,
+                'to': to_address,
+                'amount': amount,
+                'token': None,
+                'tokenSymbol': None,
+                'tokenName': None,
+                'status': status,
+                'gasUsed': 0,
+                'gasPrice': 0,
+                'blockNumber': tx.get('slot', 0),
+                'confirmations': 0,
+                'fee': fee
+            }
+        except Exception as e:
+            logger.error(f"Error parsing Solana transaction: {str(e)}")
+            return None
+
 
