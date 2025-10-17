@@ -116,7 +116,7 @@ class BlockchainService:
     
     def get_token_balances(self, address: str, chain_id: int) -> Dict[str, Dict]:
         """
-        Fetch ERC-20 token balances for major tokens (USDT, USDC, WBTC, WETH)
+        Fetch ERC-20 token balances for major tokens
         
         Args:
             address: Wallet address
@@ -128,9 +128,21 @@ class BlockchainService:
         base_url = "https://api.etherscan.io/v2/api"
         token_balances = {}
         
-        # Get tokens for this chain
+        # Define major tokens we want to track (expanded list)
+        major_tokens = [
+            'USDT', 'USDC', 'DAI',           # Stablecoins
+            'WETH', 'WBTC',                   # Wrapped assets
+            'WMATIC', 'WBNB',                 # Wrapped native tokens
+            'POL', 'MATIC',                   # Polygon tokens
+            'LINK', 'UNI', 'AAVE',            # DeFi tokens
+            'ETH'                              # Wrapped ETH on other chains
+        ]
+        
+        # Get tokens for this chain - filter by tokens we want to track
         chain_tokens = {addr: info for addr, info in self.WHITELISTED_TOKENS.items() 
-                       if info['symbol'] in ['USDT', 'USDC', 'WBTC', 'WETH', 'WMATIC', 'POL', 'MATIC']}
+                       if info['symbol'] in major_tokens}
+        
+        logger.info(f"Checking {len(chain_tokens)} tokens for chain {chain_id}")
         
         for contract_address, token_info in chain_tokens.items():
             try:
@@ -149,29 +161,46 @@ class BlockchainService:
                 data = self.fetch_with_retry(url)
                 
                 if data.get('status') == '1' and data.get('result'):
-                    # Get token decimals (usually 18 for WETH, 6 for USDT/USDC, 8 for WBTC)
-                    decimals = 18  # default
+                    # Get token decimals based on token type
+                    decimals = 18  # default for most tokens
                     if token_info['symbol'] in ['USDT', 'USDC']:
                         decimals = 6
                     elif token_info['symbol'] == 'WBTC':
                         decimals = 8
+                    # DAI, WETH, WMATIC, POL, MATIC, LINK, UNI, AAVE all use 18 decimals
                     
                     balance_raw = int(data['result'])
                     balance = balance_raw / (10 ** decimals)
                     
                     if balance > 0:  # Only include if balance exists
-                        token_balances[token_info['symbol']] = {
-                            'balance': balance,
-                            'contract': contract_address,
-                            'name': token_info['name'],
-                            'decimals': decimals
-                        }
+                        token_symbol = token_info['symbol']
+                        
+                        # If we already have this token symbol, keep the one with higher balance
+                        # This handles cases where same token exists on multiple chains
+                        if token_symbol in token_balances:
+                            if balance > token_balances[token_symbol]['balance']:
+                                token_balances[token_symbol] = {
+                                    'balance': balance,
+                                    'contract': contract_address,
+                                    'name': token_info['name'],
+                                    'decimals': decimals
+                                }
+                        else:
+                            token_balances[token_symbol] = {
+                                'balance': balance,
+                                'contract': contract_address,
+                                'name': token_info['name'],
+                                'decimals': decimals
+                            }
                         logger.info(f"Found {token_info['symbol']} balance: {balance}")
+                else:
+                    logger.debug(f"No balance for {token_info['symbol']} at {contract_address}")
                 
             except Exception as e:
-                logger.warning(f"Error fetching {token_info['symbol']} balance: {str(e)}")
+                logger.warning(f"Error fetching {token_info['symbol']} balance at {contract_address}: {str(e)}")
                 continue
         
+        logger.info(f"Total tokens with balance: {len(token_balances)}")
         return token_balances
     
     def get_ethereum_transactions(self, address: str, chain_id: int, start_date: str, end_date: str) -> Dict:

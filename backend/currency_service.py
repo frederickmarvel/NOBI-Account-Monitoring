@@ -84,6 +84,7 @@ class CurrencyExchangeService:
             'WETH': 'weth',
             'DAI': 'dai',
             'WMATIC': 'wmatic',  # Wrapped MATIC
+            'WBNB': 'wbnb',      # Wrapped BNB
             'LINK': 'chainlink',
             'UNI': 'uniswap',
             'AAVE': 'aave'

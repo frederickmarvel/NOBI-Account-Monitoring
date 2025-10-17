@@ -2,7 +2,16 @@
 
 ## Issues Fixed
 
-### 1. ✅ Polygon Network Update: MATIC → POL
+### 1. ✅ Token Balance Display - USDC & DAI Missing
+**Problem:** Only USDT was showing in token balances; USDC, DAI, and other tokens were not appearing
+
+**Solution:**
+- Expanded token tracking from 7 to 15 major tokens
+- Now includes: USDT, USDC, DAI, WETH, WBTC, WMATIC, WBNB, POL, MATIC, LINK, UNI, AAVE, ETH
+- Fixed filtering logic that was excluding DAI even though it was whitelisted
+- Added better logging to track token detection
+
+### 2. ✅ Polygon Network Update: MATIC → POL
 **Problem:** System showed "MATIC" for Polygon native token, but Polygon migrated to "POL"
 
 **Solution:**
@@ -11,7 +20,7 @@
 - Updated `blockchain_service.py`: Added POL token to whitelist
 - Both MATIC (legacy) and POL (new) now supported
 
-### 2. ✅ Balance Reporting Verification
+### 3. ✅ Balance Reporting Verification
 **Problem:** Needed to verify balance calculations were accurate
 
 **Solution:**
@@ -20,12 +29,13 @@
 - Confirmed token balances use correct decimals (6, 8, or 18)
 - All calculations verified accurate
 
-### 3. ✅ Extended Token Support
+### 4. ✅ Extended Token Support
 **Added price mappings for:**
 - LINK (Chainlink)
 - UNI (Uniswap)
 - AAVE (Aave)
 - POL (Polygon Ecosystem Token)
+- WBNB (Wrapped BNB)
 
 ## What Changed
 
@@ -34,16 +44,19 @@
    - Line 217: Updated Polygon symbol to POL
    
 2. **backend/currency_service.py**
-   - Line 73-78: Added POL, LINK, UNI, AAVE to symbol_map
+   - Line 73-79: Added POL, LINK, UNI, AAVE, WBNB to symbol_map
    
 3. **backend/blockchain_service.py**
    - Line 43: Added POL token contract (Ethereum mainnet)
    - Line 42: Updated MATIC description to "(Legacy)"
-   - Line 133: Extended token filter to include POL and MATIC
+   - Lines 119-136: Completely rewrote `get_token_balances()` to track 15 tokens instead of 7
+   - Added DAI, LINK, UNI, AAVE, WBNB, ETH to tracked tokens
+   - Improved logging and duplicate handling
 
 ### New Documentation Files
 1. **POLYGON_POL_UPDATE.md** - Detailed explanation of POL/MATIC migration
 2. **BALANCE_VERIFICATION.md** - Comprehensive balance calculation verification
+3. **TOKEN_FILTERING_README.md** - Detailed explanation of token filtering fix
 
 ## How to Test
 
