@@ -84,6 +84,13 @@ class BlockchainService:
         '0x50c5725949a6f0c72e6c4a641f24049a917db0cb': {'symbol': 'DAI', 'name': 'Dai Stablecoin'},
     }
     
+    # Solana SPL Token Whitelist
+    WHITELISTED_SOLANA_TOKENS = {
+        'hnstrzjneey2qoyd5d6t48kw2xyymyhwvgt61hm5bahj': {'symbol': 'HNST', 'name': 'Honest', 'decimals': 6},
+        'es9vmdgxea8x2fdjrqstqdh7j3z4ntfct3wkxyazxmwg': {'symbol': 'USDC', 'name': 'USD Coin', 'decimals': 6},
+        'es9vmdgxea8x2fdjrqstqdh7j3z4ntfct3wkxyazxmwg': {'symbol': 'USDT', 'name': 'Tether USD', 'decimals': 6},
+    }
+    
     def __init__(self, api_key: str, solscan_api_key: str = None):
         self.api_key = api_key
         self.solscan_api_key = solscan_api_key
@@ -575,6 +582,73 @@ class BlockchainService:
             if not account_keys:
                 return None
             
+            # Check for SPL token transfers in parsed instructions
+            token_transfer = None
+            token_info = None
+            instructions = message.get('instructions', [])
+            
+            for instruction in instructions:
+                if isinstance(instruction, dict):
+                    parsed = instruction.get('parsed', {})
+                    if isinstance(parsed, dict):
+                        instruction_type = parsed.get('type', '')
+                        
+                        # Check for SPL token transfer
+                        if instruction_type in ['transfer', 'transferChecked']:
+                            info = parsed.get('info', {})
+                            mint = info.get('mint', '').lower()
+                            
+                            # Check if token is whitelisted
+                            if mint in self.WHITELISTED_SOLANA_TOKENS:
+                                token_info = self.WHITELISTED_SOLANA_TOKENS[mint]
+                                token_transfer = {
+                                    'mint': mint,
+                                    'source': info.get('source', ''),
+                                    'destination': info.get('destination', ''),
+                                    'amount': info.get('amount', '0'),
+                                    'tokenAmount': info.get('tokenAmount', {}),
+                                    'authority': info.get('authority', '')
+                                }
+                                break
+            
+            # If this is a whitelisted SPL token transfer
+            if token_transfer and token_info:
+                # Get amount with proper decimals
+                token_amount_info = token_transfer.get('tokenAmount', {})
+                if token_amount_info:
+                    amount = float(token_amount_info.get('uiAmount', 0))
+                else:
+                    # Fallback: use raw amount and decimals
+                    raw_amount = int(token_transfer.get('amount', 0))
+                    decimals = token_info.get('decimals', 6)
+                    amount = raw_amount / (10 ** decimals)
+                
+                # Determine direction
+                destination = token_transfer.get('destination', '')
+                source = token_transfer.get('source', '')
+                is_incoming = destination.lower() == user_address.lower()
+                
+                return {
+                    'hash': signature,
+                    'timestamp': block_time,
+                    'date': datetime.fromtimestamp(block_time).isoformat() if block_time else 'Unknown',
+                    'type': 'Token Transfer',
+                    'direction': 'in' if is_incoming else 'out',
+                    'from': source,
+                    'to': destination,
+                    'amount': amount,
+                    'token': token_info['symbol'],
+                    'tokenSymbol': token_info['symbol'],
+                    'tokenName': token_info['name'],
+                    'status': 'Failed' if meta.get('err') else 'Success',
+                    'gasUsed': 0,
+                    'gasPrice': 0,
+                    'blockNumber': tx.get('slot', 0),
+                    'confirmations': 0,
+                    'fee': meta.get('fee', 0) / 1e9
+                }
+            
+            # Otherwise, parse as SOL transfer
             # Get pre and post balances
             pre_balances = meta.get('preBalances', [])
             post_balances = meta.get('postBalances', [])
