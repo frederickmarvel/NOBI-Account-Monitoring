@@ -16,12 +16,16 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__, static_folder='.')
 CORS(app)  
 
-# Get API key from environment variable (required for production)
+# Get API keys from environment variables (required for production)
 ETHERSCAN_API_KEY = os.getenv('ETHERSCAN_API_KEY')
+SOLSCAN_API_KEY = os.getenv('SOLSCAN_API_KEY')
+
 if not ETHERSCAN_API_KEY:
     logger.warning("ETHERSCAN_API_KEY not found in environment variables!")
+if not SOLSCAN_API_KEY:
+    logger.warning("SOLSCAN_API_KEY not found in environment variables - Solana support will be limited!")
 
-blockchain_service = BlockchainService(api_key=ETHERSCAN_API_KEY)
+blockchain_service = BlockchainService(api_key=ETHERSCAN_API_KEY, solscan_api_key=SOLSCAN_API_KEY)
 currency_service = CurrencyExchangeService()
 pdf_generator = PDFReportGenerator()
 
@@ -237,6 +241,8 @@ def export_pdf(blockchain, address):
         balance_raw = float(data.get('balance', 0))
         if blockchain == 'bitcoin':
             balance = balance_raw / 1e8
+        elif blockchain == 'solana':
+            balance = balance_raw / 1e9  # lamports to SOL
         elif blockchain == 'ethereum' or blockchain in ['polygon', 'bsc', 'arbitrum', 'optimism', 'base', 'blast', 'linea', 'scroll', 'zksync']:
             balance = balance_raw / 1e18
         else:

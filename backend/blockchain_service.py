@@ -84,8 +84,9 @@ class BlockchainService:
         '0x50c5725949a6f0c72e6c4a641f24049a917db0cb': {'symbol': 'DAI', 'name': 'Dai Stablecoin'},
     }
     
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: str, solscan_api_key: str = None):
         self.api_key = api_key
+        self.solscan_api_key = solscan_api_key
         self.rate_limiter = RateLimiter(max_calls_per_second=5)
         self.session = requests.Session()
         self.session.headers.update({
@@ -453,13 +454,137 @@ class BlockchainService:
         }
     
     def get_solana_transactions(self, address: str, start_date: str, end_date: str) -> Dict:
-        """Fetch Solana transactions (simplified version)"""
-        # Solana requires more complex setup with RPC calls
-        # For now, return empty result
+        """
+        Fetch Solana transactions using Solscan API v2.0
+        API Documentation: https://pro-api.solscan.io/pro-api-docs/v2.0/reference/v2-account-detail
+        """
+        if not self.solscan_api_key:
+            logger.warning("SOLSCAN_API_KEY not set - Solana transactions unavailable")
+            return {
+                'success': False,
+                'error': 'Solscan API key not configured',
+                'balance': '0',
+                'transactions': [],
+                'count': 0
+            }
+        
+        try:
+            # Convert dates to timestamps
+            start_ts = int(datetime.strptime(start_date, '%Y-%m-%d').timestamp())
+            end_ts = int(datetime.strptime(end_date, '%Y-%m-%d').timestamp())
+            
+            # Get account balance using Solscan API v2.0
+            balance_url = f"https://pro-api.solscan.io/v2.0/account/{address}"
+            headers = {
+                'token': self.solscan_api_key,
+                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)'
+            }
+            
+            self.rate_limiter.wait_if_needed()
+            balance_response = requests.get(balance_url, headers=headers, timeout=30)
+            balance_response.raise_for_status()
+            balance_data = balance_response.json()
+            
+            # Get SOL balance (lamports to SOL: divide by 1e9)
+            lamports = balance_data.get('data', {}).get('lamports', 0)
+            balance = lamports / 1e9
+            
+            # Get account transfers using Solscan API v2.0
+            transfers_url = f"https://pro-api.solscan.io/v2.0/account/transfer"
+            params = {
+                'address': address,
+                'page_size': 50,  # Max results per page
+                'page': 1,
+                'sort_by': 'block_time',
+                'sort_order': 'desc'
+            }
+            
+            self.rate_limiter.wait_if_needed()
+            transfers_response = requests.get(transfers_url, headers=headers, params=params, timeout=30)
+            transfers_response.raise_for_status()
+            transfers_data = transfers_response.json()
+            
+            # Parse transactions
+            transactions = []
+            if transfers_data.get('success') and transfers_data.get('data'):
+                for tx in transfers_data['data']:
+                    # Filter by date range
+                    tx_time = tx.get('block_time', 0)
+                    if start_ts <= tx_time <= end_ts:
+                        transactions.append(self._parse_solana_tx(tx, address))
+            
+            logger.info(f"Found {len(transactions)} Solana transactions for {address}")
+            
+            return {
+                'success': True,
+                'balance': str(int(lamports)),  # Return as lamports string
+                'transactions': transactions,
+                'count': len(transactions)
+            }
+            
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Solscan API error: {str(e)}")
+            return {
+                'success': False,
+                'error': f'Solscan API error: {str(e)}',
+                'balance': '0',
+                'transactions': [],
+                'count': 0
+            }
+        except Exception as e:
+            logger.error(f"Solana fetch error: {str(e)}")
+            return {
+                'success': False,
+                'error': str(e),
+                'balance': '0',
+                'transactions': [],
+                'count': 0
+            }
+    
+    def _parse_solana_tx(self, tx: Dict, user_address: str) -> Dict:
+        """Parse Solana transaction from Solscan API"""
+        # Determine direction
+        from_address = tx.get('src', '')
+        to_address = tx.get('dst', '')
+        is_incoming = to_address.lower() == user_address.lower()
+        
+        # Get amount in SOL (convert from lamports)
+        lamports = tx.get('lamport', 0)
+        amount = lamports / 1e9
+        
+        # Get timestamp
+        block_time = tx.get('block_time', 0)
+        
+        # Determine transaction type
+        tx_type = 'SOL Transfer'
+        token_symbol = None
+        token_name = None
+        
+        # Check if it's a token transfer
+        if tx.get('token_address'):
+            tx_type = 'Token Transfer'
+            token_symbol = tx.get('token_symbol', 'Unknown')
+            token_name = tx.get('token_name', 'Unknown Token')
+            # For SPL tokens, use token_decimals if available
+            decimals = tx.get('token_decimals', 9)
+            amount = lamports / (10 ** decimals)
+        
         return {
-            'success': True,
-            'balance': '0',
-            'transactions': [],
-            'count': 0,
-            'message': 'Solana support coming soon'
+            'hash': tx.get('trans_id', 'Unknown'),
+            'timestamp': block_time,
+            'date': datetime.fromtimestamp(block_time).isoformat() if block_time else 'Unknown',
+            'type': tx_type,
+            'direction': 'in' if is_incoming else 'out',
+            'from': from_address,
+            'to': to_address,
+            'amount': amount,
+            'token': token_symbol,
+            'tokenSymbol': token_symbol,
+            'tokenName': token_name,
+            'status': tx.get('status', 'Success'),
+            'gasUsed': 0,  # Solana uses different fee structure
+            'gasPrice': 0,
+            'blockNumber': tx.get('block_id', 0),
+            'confirmations': 0
         }
+
