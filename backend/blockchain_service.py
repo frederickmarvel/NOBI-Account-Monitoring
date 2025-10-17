@@ -143,7 +143,7 @@ class BlockchainService:
             'WMATIC', 'WBNB',                 # Wrapped native tokens
             'POL', 'MATIC',                   # Polygon tokens
             'LINK', 'UNI', 'AAVE',            # DeFi tokens
-            'ETH'                              # Wrapped ETH on other chains
+            'ETH', 'HNST'                     # Wrapped ETH on other chains
         ]
         
         # Get tokens for this chain - filter by tokens we want to track
