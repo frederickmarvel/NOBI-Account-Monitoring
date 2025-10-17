@@ -70,7 +70,8 @@ class CurrencyExchangeService:
         symbol_map = {
             'ETH': 'ethereum',
             'BTC': 'bitcoin',
-            'MATIC': 'matic-network',
+            'MATIC': 'matic-network',  # Old Polygon token (still used as wrapped token)
+            'POL': 'matic-network',     # New Polygon native token (uses same price as MATIC)
             'BNB': 'binancecoin',
             'AVAX': 'avalanche-2',
             'SOL': 'solana',
@@ -82,7 +83,10 @@ class CurrencyExchangeService:
             'WBTC': 'wrapped-bitcoin',
             'WETH': 'weth',
             'DAI': 'dai',
-            'WMATIC': 'wmatic'
+            'WMATIC': 'wmatic',  # Wrapped MATIC
+            'LINK': 'chainlink',
+            'UNI': 'uniswap',
+            'AAVE': 'aave'
         }
         
         coin_id = symbol_map.get(symbol.upper(), symbol.lower())

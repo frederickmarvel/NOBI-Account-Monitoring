@@ -213,8 +213,9 @@ def export_pdf(blockchain, address):
             data = blockchain_service.get_ethereum_transactions(address, chain_id, start_date, end_date)
             
             # Get crypto symbol
+            # Note: Polygon migrated from MATIC to POL as native token
             symbol_map = {
-                'ethereum': 'ETH', 'polygon': 'MATIC', 'bsc': 'BNB',
+                'ethereum': 'ETH', 'polygon': 'POL', 'bsc': 'BNB',
                 'arbitrum': 'ETH', 'optimism': 'ETH', 'avalanche': 'AVAX',
                 'base': 'ETH', 'blast': 'ETH', 'linea': 'ETH',
                 'scroll': 'ETH', 'zksync': 'ETH'

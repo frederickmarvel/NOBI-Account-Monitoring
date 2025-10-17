@@ -42,7 +42,8 @@ class BlockchainService:
         '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2': {'symbol': 'WETH', 'name': 'Wrapped Ether'},
         '0x6b175474e89094c44da98b954eedeac495271d0f': {'symbol': 'DAI', 'name': 'Dai Stablecoin'},
         '0x2260fac5e5542a773aa44fbcfedf7c193bc2c599': {'symbol': 'WBTC', 'name': 'Wrapped Bitcoin'},
-        '0x7d1afa7b718fb893db30a3abc0cfc608aacfebb0': {'symbol': 'MATIC', 'name': 'Matic Token'},
+        '0x7d1afa7b718fb893db30a3abc0cfc608aacfebb0': {'symbol': 'MATIC', 'name': 'Matic Token (Legacy)'},
+        '0x455e53cbb86018ac2b8092fdcd39d8444affc3f6': {'symbol': 'POL', 'name': 'Polygon Ecosystem Token'},
         '0x514910771af9ca656af840dff83e8264ecf986ca': {'symbol': 'LINK', 'name': 'ChainLink Token'},
         '0x1f9840a85d5af5bf1d1762f925bdaddc4201f984': {'symbol': 'UNI', 'name': 'Uniswap'},
         
@@ -129,7 +130,7 @@ class BlockchainService:
         
         # Get tokens for this chain
         chain_tokens = {addr: info for addr, info in self.WHITELISTED_TOKENS.items() 
-                       if info['symbol'] in ['USDT', 'USDC', 'WBTC', 'WETH', 'WMATIC']}
+                       if info['symbol'] in ['USDT', 'USDC', 'WBTC', 'WETH', 'WMATIC', 'POL', 'MATIC']}
         
         for contract_address, token_info in chain_tokens.items():
             try:
