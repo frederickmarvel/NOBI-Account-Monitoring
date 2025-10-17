@@ -49,7 +49,7 @@ class BlockchainService:
         
         # Polygon (Chain ID 137)
         '0xc2132d05d31c914a87c6611c10748aeb04b58e8f': {'symbol': 'USDT', 'name': 'Tether USD'},
-        '0x2791bca1f2de4661ed88a30c99a7a9449aa84174': {'symbol': 'USDC', 'name': 'USD Coin'},
+        '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359': {'symbol': 'USDC', 'name': 'USD Coin'},
         '0x7ceb23fd6bc0add59e62ac25578270cff1b9f619': {'symbol': 'WETH', 'name': 'Wrapped Ether'},
         '0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270': {'symbol': 'WMATIC', 'name': 'Wrapped Matic'},
         '0x8f3cf7ad23cd3cadbd9735aff958023239c6a063': {'symbol': 'DAI', 'name': 'Dai Stablecoin'},
