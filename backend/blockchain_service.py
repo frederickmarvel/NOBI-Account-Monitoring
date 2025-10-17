@@ -84,11 +84,11 @@ class BlockchainService:
         '0x50c5725949a6f0c72e6c4a641f24049a917db0cb': {'symbol': 'DAI', 'name': 'Dai Stablecoin'},
     }
     
-    # Solana SPL Token Whitelist
+    # Solana SPL Token Whitelist (stored in lowercase for case-insensitive comparison)
     WHITELISTED_SOLANA_TOKENS = {
         'hnstrzjneey2qoyd5d6t48kw2xyymyhwvgt61hm5bahj': {'symbol': 'HNST', 'name': 'Honest', 'decimals': 6},
         'es9vmdgxea8x2fdjrqstqdh7j3z4ntfct3wkxyazxmwg': {'symbol': 'USDC', 'name': 'USD Coin', 'decimals': 6},
-        'es9vmdgxea8x2fdjrqstqdh7j3z4ntfct3wkxyazxmwg': {'symbol': 'USDT', 'name': 'Tether USD', 'decimals': 6},
+        'es9vmfrzacrknmyfld9ryqo9q64i3dqvdwpgvtkdnkp': {'symbol': 'USDT', 'name': 'Tether USD', 'decimals': 6},
     }
     
     def __init__(self, api_key: str, solscan_api_key: str = None):
@@ -541,10 +541,14 @@ class BlockchainService:
             
             logger.info(f"Found {len(transactions)} Solana transactions for {address}")
             
+            # Get SPL token balances
+            token_balances = self.get_solana_token_balances(address)
+            
             return {
                 'success': True,
                 'balance': str(int(lamports)),  # Return as lamports string
                 'transactions': transactions,
+                'token_balances': token_balances,
                 'count': len(transactions)
             }
             
@@ -566,6 +570,74 @@ class BlockchainService:
                 'transactions': [],
                 'count': 0
             }
+    
+    def get_solana_token_balances(self, address: str) -> Dict[str, Dict]:
+        """
+        Get SPL token balances for a Solana address
+        Returns dict of token_symbol -> balance info
+        """
+        try:
+            rpc_url = "https://api.mainnet-beta.solana.com"
+            token_balances = {}
+            
+            # Get all token accounts for this address
+            payload = {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "getTokenAccountsByOwner",
+                "params": [
+                    address,
+                    {
+                        "programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"  # SPL Token Program
+                    },
+                    {
+                        "encoding": "jsonParsed"
+                    }
+                ]
+            }
+            
+            self.rate_limiter.wait_if_needed()
+            response = requests.post(rpc_url, json=payload, timeout=30)
+            response.raise_for_status()
+            data = response.json()
+            
+            if 'result' in data and 'value' in data['result']:
+                for account in data['result']['value']:
+                    try:
+                        account_data = account.get('account', {})
+                        parsed_data = account_data.get('data', {}).get('parsed', {})
+                        info = parsed_data.get('info', {})
+                        
+                        # Get mint address (token contract)
+                        mint = info.get('mint', '').lower()
+                        
+                        # Check if token is whitelisted
+                        if mint in self.WHITELISTED_SOLANA_TOKENS:
+                            token_info = self.WHITELISTED_SOLANA_TOKENS[mint]
+                            
+                            # Get token balance
+                            token_amount = info.get('tokenAmount', {})
+                            balance = float(token_amount.get('uiAmount', 0))
+                            decimals = token_amount.get('decimals', token_info.get('decimals', 6))
+                            
+                            if balance > 0:  # Only include tokens with balance
+                                token_balances[token_info['symbol']] = {
+                                    'balance': balance,
+                                    'contract': mint,
+                                    'name': token_info['name'],
+                                    'decimals': decimals
+                                }
+                                logger.info(f"Found {token_info['symbol']} balance: {balance}")
+                    
+                    except Exception as e:
+                        logger.warning(f"Error parsing token account: {str(e)}")
+                        continue
+            
+            return token_balances
+            
+        except Exception as e:
+            logger.error(f"Error fetching Solana token balances: {str(e)}")
+            return {}
     
     def _parse_solana_tx(self, tx: Dict, user_address: str, signature: str) -> Dict:
         """Parse Solana transaction from RPC response"""

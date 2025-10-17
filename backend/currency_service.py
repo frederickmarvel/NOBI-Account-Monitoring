@@ -75,6 +75,7 @@ class CurrencyExchangeService:
             'BNB': 'binancecoin',
             'AVAX': 'avalanche-2',
             'SOL': 'solana',
+            'HNST': 'honest-mining',    # Honest token (Solana SPL)
             'ADA': 'cardano',
             'TRX': 'tron',
             # ERC-20 Tokens

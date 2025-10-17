@@ -253,11 +253,11 @@ def export_pdf(blockchain, address):
             print(f"DEBUG BACKEND: First 3 transaction amounts: {[tx.get('amount', 'N/A') for tx in transactions[:3]]}")
             print(f"DEBUG BACKEND: Balance raw: {balance_raw}, Balance converted: {balance}")
         
-        # Get token balances and prices for EVM chains
+        # Get token balances and prices for EVM chains and Solana
         token_balances_with_prices = {}
         token_balances = data.get('token_balances', {})
         
-        if token_balances and blockchain in CHAIN_IDS:
+        if token_balances:
             # Get all token symbols
             token_symbols = list(token_balances.keys())
             
