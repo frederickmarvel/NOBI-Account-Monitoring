@@ -344,13 +344,30 @@ class PDFReportGenerator:
             ['Date', 'Type', 'Amount', 'USD Value', 'AED Value', 'From/To']
         ]
         
+        # Import currency service to get token prices
+        from currency_service import CurrencyExchangeService
+        currency_service = CurrencyExchangeService()
+        
         # Include ALL transactions (no limit)
         for tx in transactions:
             date = datetime.fromisoformat(tx['date'].replace('Z', '+00:00')).strftime('%Y-%m-%d %H:%M')
             tx_type = f"{tx['direction'].upper()} - {tx['type']}"
             amount = tx['amount']
-            usd_value = amount * prices['usd']
-            aed_value = amount * prices['aed']
+            
+            # Check if this is a token transaction
+            token_symbol = tx.get('tokenSymbol') or tx.get('token')
+            if token_symbol:
+                # This is a token transaction - use token symbol and get token price
+                display_symbol = token_symbol
+                token_prices = currency_service.get_crypto_prices([token_symbol])
+                tx_prices = token_prices.get(token_symbol, {'usd': 0, 'aed': 0})
+            else:
+                # This is a native token transaction - use provided prices
+                display_symbol = crypto_symbol
+                tx_prices = prices
+            
+            usd_value = amount * tx_prices['usd']
+            aed_value = amount * tx_prices['aed']
             
             # Determine from/to address
             if tx['direction'] == 'in':
@@ -363,7 +380,7 @@ class PDFReportGenerator:
             data.append([
                 date,
                 tx_type,
-                f"{amount:.6f} {crypto_symbol}",
+                f"{amount:.6f} {display_symbol}",
                 f"${usd_value:,.2f}",
                 f"AED {aed_value:,.2f}",
                 addr_short

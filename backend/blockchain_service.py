@@ -86,7 +86,7 @@ class BlockchainService:
     
     # Solana SPL Token Whitelist (stored in lowercase for case-insensitive comparison)
     WHITELISTED_SOLANA_TOKENS = {
-        'hnstrzjneey2qoyd5d6t48kw2xyymyhwvgt61hm5bahj': {'symbol': 'HNST', 'name': 'Honest', 'decimals': 6},
+        'hnstrzjneey2qoyd5d6t48kw2xymyhwvgt61hm5bahj': {'symbol': 'HNST', 'name': 'Honest', 'decimals': 6},
         'es9vmdgxea8x2fdjrqstqdh7j3z4ntfct3wkxyazxmwg': {'symbol': 'USDC', 'name': 'USD Coin', 'decimals': 6},
         'es9vmfrzacrknmyfld9ryqo9q64i3dqvdwpgvtkdnkp': {'symbol': 'USDT', 'name': 'Tether USD', 'decimals': 6},
     }
@@ -143,7 +143,7 @@ class BlockchainService:
             'WMATIC', 'WBNB',                 # Wrapped native tokens
             'POL', 'MATIC',                   # Polygon tokens
             'LINK', 'UNI', 'AAVE',            # DeFi tokens
-            'ETH', 'HNST'                     # Wrapped ETH on other chains
+            'ETH',                      # Wrapped ETH on other chains
         ]
         
         # Get tokens for this chain - filter by tokens we want to track
