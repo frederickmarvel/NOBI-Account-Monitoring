@@ -68,27 +68,38 @@ class CurrencyExchangeService:
         """Fetch price from CoinGecko API"""
         # Map common symbols to CoinGecko IDs
         symbol_map = {
+            # Native tokens
             'ETH': 'ethereum',
             'BTC': 'bitcoin',
-            'MATIC': 'matic-network',  # Old Polygon token (still used as wrapped token)
-            'POL': 'matic-network',     # New Polygon native token (uses same price as MATIC)
             'BNB': 'binancecoin',
             'AVAX': 'avalanche-2',
             'SOL': 'solana',
-            'HNST': 'honest-mining',    # Honest token (Solana SPL)
             'ADA': 'cardano',
             'TRX': 'tron',
-            # ERC-20 Tokens
+            
+            # Polygon tokens (POL is new name for MATIC)
+            'MATIC': 'polygon-ecosystem-token',   # Legacy ticker (now POL)
+            'POL': 'polygon-ecosystem-token',      # New Polygon native token
+            'WPOL': 'polygon-ecosystem-token',     # Wrapped POL on Polygon chain
+            'WMATIC': 'polygon-ecosystem-token',   # Wrapped MATIC (also migrated to POL)
+            
+            # Stablecoins
             'USDT': 'tether',
             'USDC': 'usd-coin',
+            'DAI': 'dai',
+            
+            # Wrapped assets
             'WBTC': 'wrapped-bitcoin',
             'WETH': 'weth',
-            'DAI': 'dai',
-            'WMATIC': 'wmatic',  # Wrapped MATIC
-            'WBNB': 'wbnb',      # Wrapped BNB
+            'WBNB': 'wbnb',
+            
+            # DeFi tokens
             'LINK': 'chainlink',
             'UNI': 'uniswap',
-            'AAVE': 'aave'
+            'AAVE': 'aave',
+            
+            # Other
+            'HNST': 'honest-mining'    # Honest token (Solana SPL)
         }
         
         coin_id = symbol_map.get(symbol.upper(), symbol.lower())
