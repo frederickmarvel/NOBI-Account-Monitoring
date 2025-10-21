@@ -98,6 +98,11 @@ class CurrencyExchangeService:
             'UNI': 'uniswap',
             'AAVE': 'aave',
             
+            # Arbitrum tokens
+            'ARB': 'arbitrum',
+            'aUSDT': 'aave-v3-usdt',    # Aave v3 USDT
+            'aUSDC': 'aave-v3-usdc',    # Aave v3 USDC
+            
             # Solana SPL tokens
             'HNST': 'honest-mining',    # Honest token
             'PYTH': 'pyth-network',     # Pyth Network
