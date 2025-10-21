@@ -56,7 +56,8 @@ class PDFReportGenerator:
         crypto_symbol: str,
         prices: Dict[str, float],
         date_range: Dict[str, str],
-        token_balances: Dict[str, Dict] = None
+        token_balances: Dict[str, Dict] = None,
+        token_prices: Dict[str, Dict] = None
     ) -> bytes:
         """
         Generate PDF account statement
@@ -70,6 +71,7 @@ class PDFReportGenerator:
             prices: {'usd': price, 'aed': price}
             date_range: {'start': 'YYYY-MM-DD', 'end': 'YYYY-MM-DD'}
             token_balances: Optional dict of token balances with prices
+            token_prices: Optional dict of pre-fetched token prices {'SYMBOL': {'usd': price, 'aed': price}}
             
         Returns:
             PDF file as bytes
@@ -119,7 +121,7 @@ class PDFReportGenerator:
             elements.append(tx_heading)
             elements.append(Spacer(1, 0.1*inch))
             
-            tx_table = self._create_transaction_table(transactions, crypto_symbol, prices)
+            tx_table = self._create_transaction_table(transactions, crypto_symbol, prices, token_prices)
             elements.append(tx_table)
         else:
             no_tx = Paragraph("No transactions found in the selected date range.", self.styles['CustomBody'])
@@ -337,16 +339,21 @@ class PDFReportGenerator:
         return table
     
     def _create_transaction_table(
-        self, transactions: List[Dict], crypto_symbol: str, prices: Dict
+        self, transactions: List[Dict], crypto_symbol: str, prices: Dict, token_prices: Dict[str, Dict] = None
     ) -> Table:
         """Create transaction history table - includes ALL transactions with USD values prominently displayed"""
         data = [
             ['Date', 'Type', 'USD Value', 'AED Value', 'Amount', 'From/To']
         ]
         
-        # Import currency service to get token prices
-        from currency_service import CurrencyExchangeService
-        currency_service = CurrencyExchangeService()
+        # Use provided token_prices if available, otherwise create service (fallback)
+        if token_prices is None:
+            # Fallback: create currency service (may hit rate limits)
+            from currency_service import CurrencyExchangeService
+            currency_service = CurrencyExchangeService()
+            token_prices = {}
+        else:
+            currency_service = None
         
         # Include ALL transactions (no limit)
         for tx in transactions:
@@ -359,8 +366,17 @@ class PDFReportGenerator:
             if token_symbol:
                 # This is a token transaction - use token symbol and get token price
                 display_symbol = token_symbol
-                token_prices = currency_service.get_crypto_prices([token_symbol])
-                tx_prices = token_prices.get(token_symbol, {'usd': 0, 'aed': 0})
+                
+                # Try to get price from pre-fetched prices first
+                if token_symbol in token_prices:
+                    tx_prices = token_prices[token_symbol]
+                elif currency_service:
+                    # Fallback: fetch price on demand (may hit rate limits)
+                    fetched_prices = currency_service.get_crypto_prices([token_symbol])
+                    tx_prices = fetched_prices.get(token_symbol, {'usd': 0, 'aed': 0})
+                    token_prices[token_symbol] = tx_prices  # Cache it
+                else:
+                    tx_prices = {'usd': 0, 'aed': 0}
             else:
                 # This is a native token transaction - use provided prices
                 display_symbol = crypto_symbol

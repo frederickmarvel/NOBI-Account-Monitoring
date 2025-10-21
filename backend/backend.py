@@ -257,16 +257,25 @@ def export_pdf(blockchain, address):
         token_balances_with_prices = {}
         token_balances = data.get('token_balances', {})
         
+        # Collect all unique token symbols from transactions for price fetching
+        transaction_token_symbols = set()
+        for tx in transactions:
+            token_symbol = tx.get('tokenSymbol') or tx.get('token')
+            if token_symbol:
+                transaction_token_symbols.add(token_symbol)
+        
+        # Combine token symbols from balances and transactions
+        all_token_symbols = set(token_balances.keys()) | transaction_token_symbols
+        
+        # Fetch prices for all tokens at once (avoids rate limiting in PDF generation)
+        token_prices_dict = {}
+        if all_token_symbols:
+            token_prices_dict = currency_service.get_crypto_prices(list(all_token_symbols))
+        
+        # Combine balance and price data for token balances
         if token_balances:
-            # Get all token symbols
-            token_symbols = list(token_balances.keys())
-            
-            # Fetch prices for all tokens
-            token_prices_data = currency_service.get_crypto_prices(token_symbols)
-            
-            # Combine balance and price data
             for token_symbol, token_info in token_balances.items():
-                token_prices = token_prices_data.get(token_symbol, {'usd': 0, 'aed': 0})
+                token_prices = token_prices_dict.get(token_symbol, {'usd': 0, 'aed': 0})
                 token_balances_with_prices[token_symbol] = {
                     'balance': token_info['balance'],
                     'contract': token_info['contract'],
@@ -286,7 +295,8 @@ def export_pdf(blockchain, address):
             crypto_symbol=crypto_symbol,
             prices=prices,
             date_range={'start': start_date, 'end': end_date},
-            token_balances=token_balances_with_prices
+            token_balances=token_balances_with_prices,
+            token_prices=token_prices_dict  # Pass pre-fetched token prices
         )
         
         pdf_buffer = io.BytesIO(pdf_bytes)
