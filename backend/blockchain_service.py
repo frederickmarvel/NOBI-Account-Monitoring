@@ -79,6 +79,7 @@ class BlockchainService:
             '0x82af49447d8a07e3bd95bd0d56f35241523fbab1': {'symbol': 'WETH', 'name': 'Wrapped Ether', 'decimals': 18},
             '0xda10009cbd5d07dd0cecc66161fc93d7c9000da1': {'symbol': 'DAI', 'name': 'Dai Stablecoin', 'decimals': 18},
             '0x2f2a2543b76a4166549f7aab2e75bef0aefc5b0f': {'symbol': 'WBTC', 'name': 'Wrapped BTC', 'decimals': 8},
+            '0xba5ddd1f9d7f570dc94a51479a000e3bce967196': {'symbol': 'AAVE', 'name': 'Aave Token', 'decimals': 18},
             '0x6ab707aca953edaefbc4fd23ba73294241490620': {'symbol': 'aUSDT', 'name': 'Aave v3 USDT', 'decimals': 6},
             '0x724dc807b04555b71ed48a6896b6f41593b8c637': {'symbol': 'aUSDC', 'name': 'Aave v3 USDC', 'decimals': 6},
             '0x912ce59144191c1204e64559fe8253a0e49e6548': {'symbol': 'ARB', 'name': 'Arbitrum', 'decimals': 18},
