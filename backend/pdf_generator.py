@@ -57,7 +57,8 @@ class PDFReportGenerator:
         prices: Dict[str, float],
         date_range: Dict[str, str],
         token_balances: Dict[str, Dict] = None,
-        token_prices: Dict[str, Dict] = None
+        token_prices: Dict[str, Dict] = None,
+        usd_to_aed_rate: float = 3.67
     ) -> bytes:
         """
         Generate PDF account statement
@@ -72,6 +73,7 @@ class PDFReportGenerator:
             date_range: {'start': 'YYYY-MM-DD', 'end': 'YYYY-MM-DD'}
             token_balances: Optional dict of token balances with prices
             token_prices: Optional dict of pre-fetched token prices {'SYMBOL': {'usd': price, 'aed': price}}
+            usd_to_aed_rate: USD to AED exchange rate (default: 3.67)
             
         Returns:
             PDF file as bytes
@@ -100,7 +102,7 @@ class PDFReportGenerator:
         elements.append(Spacer(1, 0.1*inch))
         
         portfolio_table = self._create_combined_portfolio_table(
-            balance, crypto_symbol, prices, token_balances
+            balance, crypto_symbol, prices, token_balances, usd_to_aed_rate
         )
         elements.append(portfolio_table)
         elements.append(Spacer(1, 0.3*inch))
@@ -131,7 +133,7 @@ class PDFReportGenerator:
         elements.append(Spacer(1, 0.5*inch))
         footer = Paragraph(
             f"Generated on {datetime.now().strftime('%B %d, %Y at %I:%M %p')}<br/>"
-            f"Exchange Rates: 1 USD = 3.67 AED",
+            f"Exchange Rates: 1 USD = {usd_to_aed_rate:.4f} AED",
             self.styles['CustomBody']
         )
         elements.append(footer)
@@ -172,7 +174,7 @@ class PDFReportGenerator:
     
     def _create_combined_portfolio_table(
         self, balance: float, crypto_symbol: str, prices: Dict,
-        token_balances: Dict[str, Dict] = None
+        token_balances: Dict[str, Dict] = None, usd_to_aed_rate: float = 3.67
     ) -> Table:
         """Create combined portfolio table with native token and all ERC-20 tokens"""
         # Calculate native token value
@@ -221,8 +223,8 @@ class PDFReportGenerator:
         # Add separator row
         data.append(['', '', '', '', ''])
         
-        # Calculate total values
-        total_value_aed = total_value_usd * 3.67
+        # Calculate total values using the provided exchange rate
+        total_value_aed = total_value_usd * usd_to_aed_rate
         
         # Add total row
         data.append([

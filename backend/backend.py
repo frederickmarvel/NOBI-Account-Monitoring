@@ -287,6 +287,9 @@ def export_pdf(blockchain, address):
                     'value_aed': token_info['balance'] * token_prices['aed']
                 }
         
+        # Get USD to AED exchange rate from currency service
+        usd_to_aed_rate = currency_service.get_usd_to_aed_rate()
+        
         pdf_bytes = pdf_generator.generate_account_statement(
             address=address,
             blockchain=blockchain,
@@ -296,7 +299,8 @@ def export_pdf(blockchain, address):
             prices=prices,
             date_range={'start': start_date, 'end': end_date},
             token_balances=token_balances_with_prices,
-            token_prices=token_prices_dict  # Pass pre-fetched token prices
+            token_prices=token_prices_dict,  # Pass pre-fetched token prices
+            usd_to_aed_rate=usd_to_aed_rate  # Pass exchange rate
         )
         
         pdf_buffer = io.BytesIO(pdf_bytes)
