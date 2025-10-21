@@ -291,9 +291,6 @@ def export_pdf(blockchain, address):
                     'value_aed': value_usd * usd_to_aed_rate  # Correct AED value
                 }
         
-        # Get USD to AED exchange rate from currency service
-        usd_to_aed_rate = currency_service.get_usd_to_aed_rate()
-        
         pdf_bytes = pdf_generator.generate_account_statement(
             address=address,
             blockchain=blockchain,
