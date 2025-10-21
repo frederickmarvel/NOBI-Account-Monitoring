@@ -272,19 +272,23 @@ def export_pdf(blockchain, address):
         if all_token_symbols:
             token_prices_dict = currency_service.get_crypto_prices(list(all_token_symbols))
         
+        # Get USD to AED exchange rate from currency service
+        usd_to_aed_rate = currency_service.get_usd_to_aed_rate()
+        
         # Combine balance and price data for token balances
         if token_balances:
             for token_symbol, token_info in token_balances.items():
                 token_prices = token_prices_dict.get(token_symbol, {'usd': 0, 'aed': 0})
+                value_usd = token_info['balance'] * token_prices['usd']
                 token_balances_with_prices[token_symbol] = {
                     'balance': token_info['balance'],
                     'contract': token_info['contract'],
                     'name': token_info['name'],
                     'decimals': token_info['decimals'],
                     'price_usd': token_prices['usd'],
-                    'price_aed': token_prices['aed'],
-                    'value_usd': token_info['balance'] * token_prices['usd'],
-                    'value_aed': token_info['balance'] * token_prices['aed']
+                    'price_aed': token_prices['usd'] * usd_to_aed_rate,  # Correct AED price
+                    'value_usd': value_usd,
+                    'value_aed': value_usd * usd_to_aed_rate  # Correct AED value
                 }
         
         # Get USD to AED exchange rate from currency service

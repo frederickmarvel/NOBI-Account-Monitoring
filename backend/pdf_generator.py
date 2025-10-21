@@ -113,7 +113,7 @@ class PDFReportGenerator:
         elements.append(Spacer(1, 0.3*inch))
         
         # Summary Statistics
-        summary = self._create_summary_table(transactions, crypto_symbol, prices)
+        summary = self._create_summary_table(transactions, crypto_symbol, prices, token_prices, usd_to_aed_rate)
         elements.append(summary)
         elements.append(Spacer(1, 0.3*inch))
         
@@ -179,7 +179,7 @@ class PDFReportGenerator:
         """Create combined portfolio table with native token and all ERC-20 tokens"""
         # Calculate native token value
         native_value_usd = balance * prices['usd']
-        native_value_aed = balance * prices['aed']
+        native_value_aed = native_value_usd * usd_to_aed_rate  # Use exchange rate
         
         # Header row
         data = [
@@ -295,33 +295,58 @@ class PDFReportGenerator:
         return Paragraph(info_text, self.styles['CustomBody'])
     
     def _create_summary_table(
-        self, transactions: List[Dict], crypto_symbol: str, prices: Dict
+        self, transactions: List[Dict], crypto_symbol: str, prices: Dict, 
+        token_prices: Dict[str, Dict] = None, usd_to_aed_rate: float = 3.67
     ) -> Table:
         """Create summary statistics table"""
-        # Debug: Check transaction amounts
-        if transactions:
-            print(f"DEBUG: First transaction amount: {transactions[0].get('amount', 'N/A')}")
-            print(f"DEBUG: Total transactions: {len(transactions)}")
+        # Calculate totals with proper USD/AED values per transaction
+        total_in_usd = 0
+        total_out_usd = 0
+        total_in_native = 0
+        total_out_native = 0
         
-        total_in = sum(tx['amount'] for tx in transactions if tx['direction'] == 'in')
-        total_out = sum(tx['amount'] for tx in transactions if tx['direction'] == 'out')
-        net_change = total_in - total_out
+        for tx in transactions:
+            amount = tx['amount']
+            direction = tx['direction']
+            tx_type = tx.get('type', 'Transaction')
+            
+            # Calculate USD value based on transaction type
+            if tx_type == 'Token Transfer':
+                # For token transfers, use the token's price
+                token_symbol = tx.get('token_symbol', '')
+                if token_prices and token_symbol in token_prices:
+                    usd_value = amount * token_prices[token_symbol].get('usd', 0)
+                else:
+                    usd_value = 0
+            else:
+                # For native transactions, use native token price
+                usd_value = amount * prices['usd']
+                if direction == 'in':
+                    total_in_native += amount
+                else:
+                    total_out_native += amount
+            
+            # Accumulate totals
+            if direction == 'in':
+                total_in_usd += usd_value
+            else:
+                total_out_usd += usd_value
         
-        print(f"DEBUG: Total in: {total_in}, Total out: {total_out}, Net: {net_change}")
+        # Calculate net change
+        net_change_native = total_in_native - total_out_native
+        net_change_usd = total_in_usd - total_out_usd
         
-        total_in_usd = total_in * prices['usd']
-        total_in_aed = total_in * prices['aed']
-        total_out_usd = total_out * prices['usd']
-        total_out_aed = total_out * prices['aed']
-        net_change_usd = net_change * prices['usd']
-        net_change_aed = net_change * prices['aed']
+        # Convert to AED using exchange rate
+        total_in_aed = total_in_usd * usd_to_aed_rate
+        total_out_aed = total_out_usd * usd_to_aed_rate
+        net_change_aed = net_change_usd * usd_to_aed_rate
         
         data = [
             ['Summary Statistics', '', '', ''],
             ['', crypto_symbol, 'USD', 'AED'],
-            ['Total Received', f'{total_in:.6f}', f'${total_in_usd:,.2f}', f'AED {total_in_aed:,.2f}'],
-            ['Total Sent', f'{total_out:.6f}', f'${total_out_usd:,.2f}', f'AED {total_out_aed:,.2f}'],
-            ['Net Change', f'{net_change:.6f}', f'${net_change_usd:,.2f}', f'AED {net_change_aed:,.2f}'],
+            ['Total Received', f'{total_in_native:.6f}', f'${total_in_usd:,.2f}', f'AED {total_in_aed:,.2f}'],
+            ['Total Sent', f'{total_out_native:.6f}', f'${total_out_usd:,.2f}', f'AED {total_out_aed:,.2f}'],
+            ['Net Change', f'{net_change_native:.6f}', f'${net_change_usd:,.2f}', f'AED {net_change_aed:,.2f}'],
             ['Total Transactions', str(len(transactions)), '', ''],
         ]
         
