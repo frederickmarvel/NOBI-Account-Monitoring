@@ -98,8 +98,9 @@ class CurrencyExchangeService:
             'UNI': 'uniswap',
             'AAVE': 'aave',
             
-            # Other
-            'HNST': 'honest-mining'    # Honest token (Solana SPL)
+            # Solana SPL tokens
+            'HNST': 'honest-mining',    # Honest token
+            'PYTH': 'pyth-network',     # Pyth Network
         }
         
         coin_id = symbol_map.get(symbol.upper(), symbol.lower())

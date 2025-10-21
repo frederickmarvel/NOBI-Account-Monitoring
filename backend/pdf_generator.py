@@ -339,9 +339,9 @@ class PDFReportGenerator:
     def _create_transaction_table(
         self, transactions: List[Dict], crypto_symbol: str, prices: Dict
     ) -> Table:
-        """Create transaction history table - includes ALL transactions"""
+        """Create transaction history table - includes ALL transactions with USD values prominently displayed"""
         data = [
-            ['Date', 'Type', 'Amount', 'USD Value', 'AED Value', 'From/To']
+            ['Date', 'Type', 'USD Value', 'AED Value', 'Amount', 'From/To']
         ]
         
         # Import currency service to get token prices
@@ -369,6 +369,16 @@ class PDFReportGenerator:
             usd_value = amount * tx_prices['usd']
             aed_value = amount * tx_prices['aed']
             
+            # Format amount with appropriate decimals based on size
+            if amount >= 1000:
+                amount_str = f"{amount:,.2f} {display_symbol}"
+            elif amount >= 1:
+                amount_str = f"{amount:.4f} {display_symbol}"
+            elif amount > 0:
+                amount_str = f"{amount:.8f} {display_symbol}"
+            else:
+                amount_str = f"0 {display_symbol}"
+            
             # Determine from/to address
             if tx['direction'] == 'in':
                 addr = tx.get('from', 'Unknown')
@@ -380,13 +390,14 @@ class PDFReportGenerator:
             data.append([
                 date,
                 tx_type,
-                f"{amount:.6f} {display_symbol}",
-                f"${usd_value:,.2f}",
-                f"AED {aed_value:,.2f}",
+                f"${usd_value:,.2f}" if usd_value >= 0.01 else f"${usd_value:.4f}",
+                f"AED {aed_value:,.2f}" if aed_value >= 0.01 else f"AED {aed_value:.4f}",
+                amount_str,
                 addr_short
             ])
         
-        table = Table(data, colWidths=[1.3*inch, 1.2*inch, 1.2*inch, 1*inch, 1*inch, 1*inch])
+        # Updated column widths: Date, Type, USD Value, AED Value, Amount, From/To
+        table = Table(data, colWidths=[1.2*inch, 1.1*inch, 1*inch, 1*inch, 1.3*inch, 1.2*inch])
         table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#34495e')),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
