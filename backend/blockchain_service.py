@@ -190,27 +190,27 @@ class BlockchainService:
                     
                     balance_raw = int(data['result'])
                     balance = balance_raw / (10 ** decimals)
+                    
+                    # ONLY include tokens with balance > 0
+                    if balance > 0:
+                        token_symbol = token_info['symbol']
+                        
+                        # If we already have this token symbol, sum the balances across chains
+                        if token_symbol in token_balances:
+                            token_balances[token_symbol]['balance'] += balance
+                            logger.info(f"Adding {token_symbol} balance: {balance} (total: {token_balances[token_symbol]['balance']})")
+                        else:
+                            token_balances[token_symbol] = {
+                                'balance': balance,
+                                'contract': contract_address,
+                                'name': token_info['name'],
+                                'decimals': decimals
+                            }
+                            logger.info(f"✅ Token {token_symbol}: balance={balance}")
+                    else:
+                        logger.debug(f"Skipping {token_info['symbol']} - zero balance")
                 else:
-                    # API error or no result - set balance to 0
-                    balance = 0.0
-                    decimals = token_info.get('decimals', 18)
                     logger.debug(f"No balance for {token_info['symbol']} at {contract_address}")
-                
-                # Always include ALL whitelisted tokens, even with 0 balance
-                token_symbol = token_info['symbol']
-                
-                # If we already have this token symbol, sum the balances across chains
-                if token_symbol in token_balances:
-                    token_balances[token_symbol]['balance'] += balance
-                    logger.info(f"Adding {token_symbol} balance: {balance} (total: {token_balances[token_symbol]['balance']})")
-                else:
-                    token_balances[token_symbol] = {
-                        'balance': balance,
-                        'contract': contract_address,
-                        'name': token_info['name'],
-                        'decimals': decimals
-                    }
-                    logger.info(f"Token {token_symbol}: balance={balance}")
                 
             except Exception as e:
                 logger.warning(f"Error fetching {token_info['symbol']} balance at {contract_address}: {str(e)}")
