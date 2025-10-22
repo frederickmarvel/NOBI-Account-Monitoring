@@ -56,7 +56,9 @@ class CurrencyExchangeService:
             'USDT': 'tether', 'USDC': 'usd-coin', 'DAI': 'dai',
             'WBTC': 'wrapped-bitcoin', 'WETH': 'weth', 'WBNB': 'wbnb',
             'LINK': 'chainlink', 'UNI': 'uniswap', 'AAVE': 'aave',
-            'ARB': 'arbitrum', 'aUSDT': 'tether', 'aUSDC': 'usd-coin',
+            'ARB': 'arbitrum', 
+            'AUSDT': 'tether',  # Aave USDT uses same price as USDT
+            'AUSDC': 'usd-coin',  # Aave USDC uses same price as USDC
             'HNST': 'honest-mining', 'PYTH': 'pyth-network',
         }
         
