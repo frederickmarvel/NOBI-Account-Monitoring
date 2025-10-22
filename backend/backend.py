@@ -257,6 +257,11 @@ def export_pdf(blockchain, address):
         token_balances_with_prices = {}
         token_balances = data.get('token_balances', {})
         
+        # CRITICAL DEBUG: Log what we received from blockchain service
+        logger.info(f"🔍 DEBUG: Received {len(token_balances)} tokens from blockchain_service")
+        for sym, info in token_balances.items():
+            logger.info(f"   → {sym}: balance={info.get('balance', 0)}, contract={info.get('contract', 'N/A')[:20]}...")
+        
         # Collect all unique token symbols from transactions for price fetching
         transaction_token_symbols = set()
         for tx in transactions:
@@ -280,6 +285,7 @@ def export_pdf(blockchain, address):
         
         # Combine balance and price data for token balances
         if token_balances:
+            logger.info(f"🔍 DEBUG: Processing {len(token_balances)} tokens for PDF")
             for token_symbol, token_info in token_balances.items():
                 token_prices = token_prices_dict.get(token_symbol, {'usd': 0, 'aed': 0})
                 
@@ -298,7 +304,9 @@ def export_pdf(blockchain, address):
                     'value_usd': value_usd,
                     'value_aed': value_usd * usd_to_aed_rate  # Correct AED value
                 }
-                logger.info(f"Token {token_symbol}: balance={token_info['balance']}, price_usd={token_prices['usd']}, value_usd={value_usd}")
+                logger.info(f"✅ Added to PDF: {token_symbol}: balance={token_info['balance']}, price_usd={token_prices['usd']}, value_usd={value_usd}")
+        else:
+            logger.error("❌ NO TOKEN BALANCES TO PROCESS!")
         
         pdf_bytes = pdf_generator.generate_account_statement(
             address=address,
