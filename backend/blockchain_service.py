@@ -194,24 +194,27 @@ class BlockchainService:
                     if balance > 0:  # Only include if balance exists
                         token_symbol = token_info['symbol']
                         
-                        # If we already have this token symbol, keep the one with higher balance
-                        # This handles cases where same token exists on multiple chains
-                        if token_symbol in token_balances:
-                            if balance > token_balances[token_symbol]['balance']:
-                                token_balances[token_symbol] = {
-                                    'balance': balance,
-                                    'contract': contract_address,
-                                    'name': token_info['name'],
-                                    'decimals': decimals
-                                }
-                        else:
-                            token_balances[token_symbol] = {
-                                'balance': balance,
-                                'contract': contract_address,
-                                'name': token_info['name'],
-                                'decimals': decimals
-                            }
-                        logger.info(f"Found {token_info['symbol']} balance: {balance}")
+                        # Create chain-specific key to avoid collisions (e.g., USDC-Polygon, USDC-Ethereum)
+                        chain_names = {
+                            1: 'Ethereum',
+                            137: 'Polygon',
+                            56: 'BSC',
+                            42161: 'Arbitrum',
+                            10: 'Optimism',
+                            8453: 'Base'
+                        }
+                        chain_suffix = chain_names.get(chain_id, f'Chain{chain_id}')
+                        unique_key = f"{token_symbol}-{chain_suffix}"
+                        
+                        token_balances[unique_key] = {
+                            'balance': balance,
+                            'contract': contract_address,
+                            'name': token_info['name'],
+                            'decimals': decimals,
+                            'symbol': token_symbol,  # Keep original symbol for price lookups
+                            'chain': chain_suffix
+                        }
+                        logger.info(f"Found {unique_key} balance: {balance}")
                 else:
                     logger.debug(f"No balance for {token_info['symbol']} at {contract_address}")
                 
