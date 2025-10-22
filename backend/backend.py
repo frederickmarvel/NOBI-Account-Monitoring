@@ -216,6 +216,22 @@ def export_pdf(blockchain, address):
             chain_id = CHAIN_IDS[blockchain]
             data = blockchain_service.get_ethereum_transactions(address, chain_id, start_date, end_date)
             
+            # CRITICAL DIAGNOSTIC LOGGING - Track USDC issue
+            import os
+            logger.error("="*80)
+            logger.error("🔍 CRITICAL DIAGNOSTIC START")
+            logger.error(f"🔑 ETHERSCAN_API_KEY set: {bool(os.getenv('ETHERSCAN_API_KEY'))}")
+            logger.error(f"🔑 API KEY first 10 chars: {os.getenv('ETHERSCAN_API_KEY', 'MISSING')[:10]}...")
+            logger.error(f"📍 Address: {address}")
+            logger.error(f"⛓️ Chain: {blockchain} (ID: {chain_id})")
+            logger.error(f"📦 Data success: {data.get('success')}")
+            logger.error(f"📦 Token balances count: {len(data.get('token_balances', {}))}")
+            logger.error(f"📦 Token symbols: {list(data.get('token_balances', {}).keys())}")
+            for sym, info in data.get('token_balances', {}).items():
+                logger.error(f"   🪙 {sym}: balance={info.get('balance')} | contract={info.get('contract', '')[:20]}")
+            logger.error("🔍 CRITICAL DIAGNOSTIC END")
+            logger.error("="*80)
+            
             # Get crypto symbol
             # Note: Polygon migrated from MATIC to POL as native token
             symbol_map = {

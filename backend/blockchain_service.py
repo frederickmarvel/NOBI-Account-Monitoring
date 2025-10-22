@@ -184,6 +184,11 @@ class BlockchainService:
                 url = f"{base_url}?" + "&".join([f"{k}={v}" for k, v in params.items()])
                 data = self.fetch_with_retry(url)
                 
+                # CRITICAL DIAGNOSTIC - Track API responses
+                logger.error(f"🌐 API call for {token_info['symbol']} at {contract_address[:20]}...")
+                logger.error(f"   📊 Status: {data.get('status')}, Result: {str(data.get('result', 'N/A'))[:50]}")
+                logger.error(f"   💬 Message: {data.get('message', 'N/A')}")
+                
                 if data.get('status') == '1' and data.get('result'):
                     # Use decimals from token info (now stored in whitelist)
                     decimals = token_info.get('decimals', 18)
