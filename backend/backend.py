@@ -270,15 +270,23 @@ def export_pdf(blockchain, address):
         # Fetch prices for all tokens at once (avoids rate limiting in PDF generation)
         token_prices_dict = {}
         if all_token_symbols:
+            logger.info(f"Fetching prices for tokens: {all_token_symbols}")
             token_prices_dict = currency_service.get_crypto_prices(list(all_token_symbols))
+            logger.info(f"Fetched prices: {token_prices_dict}")
         
         # Get USD to AED exchange rate from currency service
         usd_to_aed_rate = currency_service.get_usd_to_aed_rate()
+        logger.info(f"Using USD/AED rate: {usd_to_aed_rate}")
         
         # Combine balance and price data for token balances
         if token_balances:
             for token_symbol, token_info in token_balances.items():
                 token_prices = token_prices_dict.get(token_symbol, {'usd': 0, 'aed': 0})
+                
+                # Log if price is 0
+                if token_prices['usd'] == 0:
+                    logger.warning(f"Price for {token_symbol} is 0! Token info: {token_info}")
+                
                 value_usd = token_info['balance'] * token_prices['usd']
                 token_balances_with_prices[token_symbol] = {
                     'balance': token_info['balance'],
@@ -290,6 +298,7 @@ def export_pdf(blockchain, address):
                     'value_usd': value_usd,
                     'value_aed': value_usd * usd_to_aed_rate  # Correct AED value
                 }
+                logger.info(f"Token {token_symbol}: balance={token_info['balance']}, price_usd={token_prices['usd']}, value_usd={value_usd}")
         
         pdf_bytes = pdf_generator.generate_account_statement(
             address=address,

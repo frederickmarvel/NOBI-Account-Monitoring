@@ -17,7 +17,8 @@ class CurrencyExchangeService:
     def __init__(self):
         self.cache = {}
         self.cache_duration = 300  # 5 minutes cache
-        self.usd_to_aed_rate = 3.67  # Fixed AED/USD rate
+        self.usd_to_aed_rate = 3.67  # Fallback rate if API fails
+        self._fetch_live_usd_aed_rate()  # Fetch real rate on initialization
         
     def get_crypto_prices(self, symbols: list) -> Dict[str, Dict[str, float]]:
         """
@@ -125,8 +126,31 @@ class CurrencyExchangeService:
             logger.warning(f"CoinGecko API error for {symbol}: {str(e)}")
             return 0
     
+    def _fetch_live_usd_aed_rate(self):
+        """Fetch live USD to AED exchange rate from API"""
+        try:
+            # Use exchangerate-api.com (free, no key needed for basic usage)
+            url = "https://api.exchangerate-api.com/v4/latest/USD"
+            response = requests.get(url, timeout=10)
+            response.raise_for_status()
+            
+            data = response.json()
+            if 'rates' in data and 'AED' in data['rates']:
+                self.usd_to_aed_rate = float(data['rates']['AED'])
+                logger.info(f"Fetched live USD/AED rate: {self.usd_to_aed_rate}")
+            else:
+                logger.warning("AED rate not found in API response, using fallback rate")
+        except Exception as e:
+            logger.warning(f"Failed to fetch live USD/AED rate: {str(e)}, using fallback rate {self.usd_to_aed_rate}")
+    
     def get_usd_to_aed_rate(self) -> float:
-        """Get current USD to AED exchange rate"""
+        """Get current USD to AED exchange rate (fetches live rate if cache expired)"""
+        # Refresh rate if cache is old (every 5 minutes)
+        cache_key = 'usd_aed_rate_timestamp'
+        if cache_key not in self.cache or time.time() - self.cache[cache_key] > self.cache_duration:
+            self._fetch_live_usd_aed_rate()
+            self.cache[cache_key] = time.time()
+        
         return self.usd_to_aed_rate
     
     def convert_to_usd(self, amount: float, crypto_price_usd: float) -> float:
