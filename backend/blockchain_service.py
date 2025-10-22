@@ -117,7 +117,7 @@ class BlockchainService:
     def __init__(self, api_key: str, solscan_api_key: str = None):
         self.api_key = api_key
         self.solscan_api_key = solscan_api_key
-        self.rate_limiter = RateLimiter(max_calls_per_second=5)
+        self.rate_limiter = RateLimiter(max_calls_per_second=2)  # SLOWER to avoid rate limits
         self.session = requests.Session()
         self.session.headers.update({
             'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)'
@@ -184,10 +184,14 @@ class BlockchainService:
                 url = f"{base_url}?" + "&".join([f"{k}={v}" for k, v in params.items()])
                 data = self.fetch_with_retry(url)
                 
-                # CRITICAL DIAGNOSTIC - Track API responses
-                logger.error(f"🌐 API call for {token_info['symbol']} at {contract_address[:20]}...")
-                logger.error(f"   📊 Status: {data.get('status')}, Result: {str(data.get('result', 'N/A'))[:50]}")
-                logger.error(f"   💬 Message: {data.get('message', 'N/A')}")
+                # Check for API errors
+                if data.get('status') != '1':
+                    error_msg = data.get('message', 'Unknown error')
+                    logger.warning(f"API error for {token_info['symbol']}: {error_msg}")
+                    if 'rate limit' in error_msg.lower():
+                        logger.error(f"⚠️ RATE LIMIT HIT! Slowing down...")
+                        time.sleep(1)  # Extra delay on rate limit
+                    continue
                 
                 if data.get('status') == '1' and data.get('result'):
                     # Use decimals from token info (now stored in whitelist)
@@ -200,18 +204,13 @@ class BlockchainService:
                     if balance > 0:
                         token_symbol = token_info['symbol']
                         
-                        # If we already have this token symbol, sum the balances across chains
-                        if token_symbol in token_balances:
-                            token_balances[token_symbol]['balance'] += balance
-                            logger.info(f"Adding {token_symbol} balance: {balance} (total: {token_balances[token_symbol]['balance']})")
-                        else:
-                            token_balances[token_symbol] = {
-                                'balance': balance,
-                                'contract': contract_address,
-                                'name': token_info['name'],
-                                'decimals': decimals
-                            }
-                            logger.info(f"✅ Token {token_symbol}: balance={balance}")
+                        token_balances[token_symbol] = {
+                            'balance': balance,
+                            'contract': contract_address,
+                            'name': token_info['name'],
+                            'decimals': decimals
+                        }
+                        logger.info(f"✅ Token {token_symbol}: balance={balance}")
                     else:
                         logger.debug(f"Skipping {token_info['symbol']} - zero balance")
                 else:
