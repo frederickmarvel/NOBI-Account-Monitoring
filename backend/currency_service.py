@@ -26,8 +26,7 @@ class CurrencyExchangeService:
         Batches requests to avoid rate limiting
         
         Args:
-            symbols: List of crypto symbols or chain-specific symbols
-                    (e.g., ['ETH', 'BTC', 'USDC-Polygon', 'USDC-Ethereum'])
+            symbols: List of crypto symbols (e.g., ['ETH', 'BTC', 'MATIC'])
             
         Returns:
             Dict with prices: {'ETH': {'usd': 2000.0, 'aed': 7340.0}, ...}
@@ -67,10 +66,7 @@ class CurrencyExchangeService:
         coin_ids = []
         symbol_to_id = {}
         for symbol in symbols_to_fetch:
-            # Extract base symbol if chain-specific (e.g., "USDC-Polygon" -> "USDC")
-            base_symbol = symbol.split('-')[0] if '-' in symbol else symbol
-            
-            coin_id = symbol_map.get(base_symbol.upper(), base_symbol.lower())
+            coin_id = symbol_map.get(symbol.upper(), symbol.lower())
             if coin_id not in coin_ids:
                 coin_ids.append(coin_id)
             symbol_to_id[symbol] = coin_id

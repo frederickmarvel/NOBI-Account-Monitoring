@@ -265,7 +265,6 @@ def export_pdf(blockchain, address):
                 transaction_token_symbols.add(token_symbol)
         
         # Combine token symbols from balances and transactions
-        # Note: token_balances.keys() now includes chain-specific keys like "USDC-Polygon"
         all_token_symbols = set(token_balances.keys()) | transaction_token_symbols
         
         # Fetch prices for all tokens at once (avoids rate limiting in PDF generation)
@@ -274,16 +273,6 @@ def export_pdf(blockchain, address):
             logger.info(f"Fetching prices for tokens: {all_token_symbols}")
             token_prices_dict = currency_service.get_crypto_prices(list(all_token_symbols))
             logger.info(f"Fetched prices: {token_prices_dict}")
-        
-        # Create a lookup for base symbol -> full symbol with chain (for transactions)
-        # This allows transaction tokens like "USDC" to find "USDC-Polygon" price
-        base_symbol_lookup = {}
-        for full_symbol in token_balances.keys():
-            if '-' in full_symbol:
-                base_symbol = full_symbol.split('-')[0]
-                # Prefer the first one found (or could use highest balance)
-                if base_symbol not in base_symbol_lookup:
-                    base_symbol_lookup[base_symbol] = full_symbol
         
         # Get USD to AED exchange rate from currency service
         usd_to_aed_rate = currency_service.get_usd_to_aed_rate()
@@ -321,8 +310,7 @@ def export_pdf(blockchain, address):
             date_range={'start': start_date, 'end': end_date},
             token_balances=token_balances_with_prices,
             token_prices=token_prices_dict,  # Pass pre-fetched token prices
-            usd_to_aed_rate=usd_to_aed_rate,  # Pass exchange rate
-            base_symbol_lookup=base_symbol_lookup  # Pass lookup for transaction tokens
+            usd_to_aed_rate=usd_to_aed_rate  # Pass exchange rate
         )
         
         pdf_buffer = io.BytesIO(pdf_bytes)

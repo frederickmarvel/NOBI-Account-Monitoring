@@ -58,8 +58,7 @@ class PDFReportGenerator:
         date_range: Dict[str, str],
         token_balances: Dict[str, Dict] = None,
         token_prices: Dict[str, Dict] = None,
-        usd_to_aed_rate: float = 3.67,
-        base_symbol_lookup: Dict[str, str] = None
+        usd_to_aed_rate: float = 3.67
     ) -> bytes:
         """
         Generate PDF account statement
@@ -72,19 +71,15 @@ class PDFReportGenerator:
             crypto_symbol: Symbol (ETH, BTC, etc.)
             prices: {'usd': price, 'aed': price}
             date_range: {'start': 'YYYY-MM-DD', 'end': 'YYYY-MM-DD'}
-            token_balances: Optional dict of token balances with prices (keys may be chain-specific like "USDC-Polygon")
+            token_balances: Optional dict of token balances with prices
             token_prices: Optional dict of pre-fetched token prices {'SYMBOL': {'usd': price, 'aed': price}}
             usd_to_aed_rate: USD to AED exchange rate (default: 3.67)
-            base_symbol_lookup: Optional dict mapping base symbols to chain-specific symbols (e.g., {'USDC': 'USDC-Polygon'})
             
         Returns:
             PDF file as bytes
         """
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=0.5*inch, bottomMargin=0.5*inch)
-        
-        # Store base_symbol_lookup for use in transaction table
-        self.base_symbol_lookup = base_symbol_lookup or {}
         
         # Build document elements
         elements = []
@@ -399,15 +394,9 @@ class PDFReportGenerator:
                 # This is a token transaction - use token symbol and get token price
                 display_symbol = token_symbol
                 
-                # Check if we need to map base symbol to chain-specific symbol
-                # e.g., "USDC" -> "USDC-Polygon" for price lookup
-                lookup_symbol = token_symbol
-                if token_symbol not in token_prices and token_symbol in self.base_symbol_lookup:
-                    lookup_symbol = self.base_symbol_lookup[token_symbol]
-                
                 # Try to get price from pre-fetched prices first
-                if lookup_symbol in token_prices:
-                    tx_prices = token_prices[lookup_symbol]
+                if token_symbol in token_prices:
+                    tx_prices = token_prices[token_symbol]
                 elif currency_service:
                     # Fallback: fetch price on demand (may hit rate limits)
                     fetched_prices = currency_service.get_crypto_prices([token_symbol])
