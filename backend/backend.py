@@ -19,13 +19,24 @@ CORS(app)
 # Get API keys from environment variables (required for production)
 ETHERSCAN_API_KEY = os.getenv('ETHERSCAN_API_KEY')
 SOLSCAN_API_KEY = os.getenv('SOLSCAN_API_KEY')
+TRONSCAN_API_KEY = os.getenv('TRONSCAN_API_KEY')
+CARDANOSCAN_API_KEY = os.getenv('CARDANOSCAN_API_KEY')
 
 if not ETHERSCAN_API_KEY:
     logger.warning("ETHERSCAN_API_KEY not found in environment variables!")
 if not SOLSCAN_API_KEY:
     logger.warning("SOLSCAN_API_KEY not found in environment variables - Solana support will be limited!")
+if not TRONSCAN_API_KEY:
+    logger.warning("TRONSCAN_API_KEY not found - Tron support will use free tier with limits!")
+if not CARDANOSCAN_API_KEY:
+    logger.warning("CARDANOSCAN_API_KEY not found - Cardano support will use free tier with limits!")
 
-blockchain_service = BlockchainService(api_key=ETHERSCAN_API_KEY, solscan_api_key=SOLSCAN_API_KEY)
+blockchain_service = BlockchainService(
+    api_key=ETHERSCAN_API_KEY, 
+    solscan_api_key=SOLSCAN_API_KEY,
+    tronscan_api_key=TRONSCAN_API_KEY,
+    cardanoscan_api_key=CARDANOSCAN_API_KEY
+)
 currency_service = CurrencyExchangeService()
 pdf_generator = PDFReportGenerator()
 
@@ -212,6 +223,12 @@ def export_pdf(blockchain, address):
         elif blockchain == 'solana':
             data = blockchain_service.get_solana_transactions(address, start_date, end_date)
             crypto_symbol = 'SOL'
+        elif blockchain == 'tron':
+            data = blockchain_service.get_tron_transactions(address, start_date, end_date)
+            crypto_symbol = 'TRX'
+        elif blockchain == 'cardano':
+            data = blockchain_service.get_cardano_transactions(address, start_date, end_date)
+            crypto_symbol = 'ADA'
         elif blockchain in CHAIN_IDS:
             chain_id = CHAIN_IDS[blockchain]
             data = blockchain_service.get_ethereum_transactions(address, chain_id, start_date, end_date)
@@ -243,6 +260,10 @@ def export_pdf(blockchain, address):
             balance = balance_raw / 1e8
         elif blockchain == 'solana':
             balance = balance_raw / 1e9  # lamports to SOL
+        elif blockchain == 'tron':
+            balance = balance_raw / 1e6  # SUN to TRX
+        elif blockchain == 'cardano':
+            balance = balance_raw / 1e6  # lovelace to ADA
         elif blockchain == 'ethereum' or blockchain in ['polygon', 'bsc', 'arbitrum', 'optimism', 'base', 'blast', 'linea', 'scroll', 'zksync']:
             balance = balance_raw / 1e18
         else:

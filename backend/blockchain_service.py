@@ -114,9 +114,20 @@ class BlockchainService:
         'hz1jovnivvgrgniiyveozevgz58xau3rkwx8eacqbct3': {'symbol': 'PYTH', 'name': 'Pyth Network', 'decimals': 6},
     }
     
-    def __init__(self, api_key: str, solscan_api_key: str = None):
+    # Tron TRC-20 Token Whitelist (Mainnet)
+    WHITELISTED_TRON_TOKENS = {
+        'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t': {'symbol': 'USDT', 'name': 'Tether USD', 'decimals': 6},
+        'TEkxiTehnzSmSe2XqrBj4w32RUN966rdz8': {'symbol': 'USDC', 'name': 'USD Coin', 'decimals': 6},
+        'TNUC9Qb1rRpS5CbWLmNMxXBjyFoydXjWFR': {'symbol': 'WTRX', 'name': 'Wrapped TRX', 'decimals': 6},
+        'TKfjV9RNKJJCqPvBtK8L7Knykh7DNWvnYt': {'symbol': 'WBTC', 'name': 'Wrapped BTC', 'decimals': 8},
+        'TXpw8XeWYeTUd4quDskoUqeQPowRh4jY65': {'symbol': 'WETH', 'name': 'Wrapped ETH', 'decimals': 18},
+    }
+    
+    def __init__(self, api_key: str, solscan_api_key: str = None, tronscan_api_key: str = None, cardanoscan_api_key: str = None):
         self.api_key = api_key
         self.solscan_api_key = solscan_api_key
+        self.tronscan_api_key = tronscan_api_key
+        self.cardanoscan_api_key = cardanoscan_api_key
         self.rate_limiter = RateLimiter(max_calls_per_second=2)  # SLOWER to avoid rate limits
         self.session = requests.Session()
         self.session.headers.update({
@@ -794,6 +805,342 @@ class BlockchainService:
             }
         except Exception as e:
             logger.error(f"Error parsing Solana transaction: {str(e)}")
+            return None
+    
+    def get_tron_transactions(self, address: str, start_date: str, end_date: str) -> Dict:
+        """
+        Fetch Tron transactions using TronScan API
+        
+        Args:
+            address: Tron wallet address (base58 format)
+            start_date: Start date in YYYY-MM-DD format
+            end_date: End date in YYYY-MM-DD format
+        
+        Returns:
+            Dict with balance and transactions
+        """
+        try:
+            base_url = "https://apilist.tronscanapi.com/api"
+            
+            # Convert dates to timestamps (milliseconds)
+            start_ts = int(datetime.strptime(start_date, '%Y-%m-%d').timestamp() * 1000)
+            end_ts = int(datetime.strptime(end_date, '%Y-%m-%d').timestamp() * 1000)
+            
+            # Get account info (balance)
+            account_url = f"{base_url}/account?address={address}"
+            self.rate_limiter.wait_if_needed()
+            account_response = self.session.get(account_url, timeout=30)
+            account_response.raise_for_status()
+            account_data = account_response.json()
+            
+            # Get balance in SUN (1 TRX = 1,000,000 SUN)
+            balance_sun = account_data.get('balance', 0)
+            
+            # Get TRX transfers
+            transactions = []
+            trx_url = f"{base_url}/transaction?sort=-timestamp&count=true&limit=50&start=0&address={address}"
+            self.rate_limiter.wait_if_needed()
+            trx_response = self.session.get(trx_url, timeout=30)
+            trx_response.raise_for_status()
+            trx_data = trx_response.json()
+            
+            # Parse TRX transactions
+            if trx_data.get('data'):
+                for tx in trx_data['data']:
+                    tx_time = tx.get('timestamp', 0)
+                    if start_ts <= tx_time <= end_ts:
+                        parsed_tx = self._parse_tron_tx(tx, address)
+                        if parsed_tx:
+                            transactions.append(parsed_tx)
+            
+            # Get TRC-20 token transfers
+            trc20_url = f"{base_url}/token_trc20/transfers?relatedAddress={address}&limit=50&start=0"
+            self.rate_limiter.wait_if_needed()
+            trc20_response = self.session.get(trc20_url, timeout=30)
+            trc20_response.raise_for_status()
+            trc20_data = trc20_response.json()
+            
+            # Parse TRC-20 transactions
+            if trc20_data.get('token_transfers'):
+                for tx in trc20_data['token_transfers']:
+                    tx_time = tx.get('block_ts', 0)
+                    if start_ts <= tx_time <= end_ts:
+                        parsed_tx = self._parse_tron_trc20_tx(tx, address)
+                        if parsed_tx:
+                            transactions.append(parsed_tx)
+            
+            # Sort by timestamp
+            transactions.sort(key=lambda x: x['timestamp'], reverse=True)
+            
+            # Get TRC-20 token balances
+            token_balances = self.get_tron_token_balances(address)
+            
+            return {
+                'success': True,
+                'balance': str(balance_sun),  # Return as SUN string
+                'token_balances': token_balances,
+                'transactions': transactions,
+                'count': len(transactions)
+            }
+            
+        except Exception as e:
+            logger.error(f"Tron fetch error: {str(e)}")
+            return {
+                'success': False,
+                'error': str(e),
+                'balance': '0',
+                'transactions': [],
+                'count': 0
+            }
+    
+    def get_tron_token_balances(self, address: str) -> Dict[str, Dict]:
+        """Get TRC-20 token balances for a Tron address"""
+        try:
+            base_url = "https://apilist.tronscanapi.com/api"
+            token_balances = {}
+            
+            # Get account tokens
+            url = f"{base_url}/account/tokens?address={address}&start=0&limit=20"
+            self.rate_limiter.wait_if_needed()
+            response = self.session.get(url, timeout=30)
+            response.raise_for_status()
+            data = response.json()
+            
+            if data.get('data'):
+                for token in data['data']:
+                    contract_address = token.get('tokenId', '').strip()
+                    
+                    # Check if token is whitelisted
+                    if contract_address in self.WHITELISTED_TRON_TOKENS:
+                        token_info = self.WHITELISTED_TRON_TOKENS[contract_address]
+                        
+                        # Get balance
+                        balance_raw = float(token.get('balance', 0))
+                        decimals = token_info.get('decimals', 6)
+                        balance = balance_raw / (10 ** decimals)
+                        
+                        if balance > 0:
+                            token_balances[token_info['symbol']] = {
+                                'balance': balance,
+                                'contract': contract_address,
+                                'name': token_info['name'],
+                                'decimals': decimals
+                            }
+                            logger.info(f"Found Tron {token_info['symbol']} balance: {balance}")
+            
+            return token_balances
+            
+        except Exception as e:
+            logger.error(f"Error fetching Tron token balances: {str(e)}")
+            return {}
+    
+    def _parse_tron_tx(self, tx: Dict, user_address: str) -> Optional[Dict]:
+        """Parse Tron TRX transaction"""
+        try:
+            # Get transaction details
+            tx_hash = tx.get('hash', '')
+            timestamp = tx.get('timestamp', 0) // 1000  # Convert ms to seconds
+            
+            # Determine direction and amount
+            owner_address = tx.get('ownerAddress', '')
+            to_address = tx.get('toAddress', '')
+            is_incoming = to_address == user_address
+            
+            # Get amount (in SUN, convert to TRX)
+            amount_sun = tx.get('amount', 0)
+            amount_trx = amount_sun / 1_000_000
+            
+            # Check contract type
+            contract_type = tx.get('contractType', '')
+            
+            return {
+                'hash': tx_hash,
+                'timestamp': timestamp,
+                'date': datetime.fromtimestamp(timestamp).isoformat() if timestamp else 'Unknown',
+                'type': 'TRX Transfer',
+                'direction': 'in' if is_incoming else 'out',
+                'from': owner_address,
+                'to': to_address,
+                'amount': amount_trx,
+                'token': None,
+                'tokenSymbol': None,
+                'status': 'Success' if tx.get('confirmed') else 'Pending',
+                'gasUsed': 0,
+                'gasPrice': 0,
+                'blockNumber': tx.get('block', 0),
+                'confirmations': 0
+            }
+        except Exception as e:
+            logger.error(f"Error parsing Tron transaction: {str(e)}")
+            return None
+    
+    def _parse_tron_trc20_tx(self, tx: Dict, user_address: str) -> Optional[Dict]:
+        """Parse Tron TRC-20 token transaction"""
+        try:
+            contract_address = tx.get('contract_address', '').strip()
+            
+            # Filter out non-whitelisted tokens
+            if contract_address not in self.WHITELISTED_TRON_TOKENS:
+                return None
+            
+            token_info = self.WHITELISTED_TRON_TOKENS[contract_address]
+            
+            # Get transaction details
+            tx_hash = tx.get('transaction_id', '')
+            timestamp = tx.get('block_ts', 0) // 1000  # Convert ms to seconds
+            
+            from_address = tx.get('from_address', '')
+            to_address = tx.get('to_address', '')
+            is_incoming = to_address == user_address
+            
+            # Get amount with decimals
+            amount_raw = float(tx.get('quant', 0))
+            decimals = token_info.get('decimals', 6)
+            amount = amount_raw / (10 ** decimals)
+            
+            return {
+                'hash': tx_hash,
+                'timestamp': timestamp,
+                'date': datetime.fromtimestamp(timestamp).isoformat() if timestamp else 'Unknown',
+                'type': 'TRC-20 Transfer',
+                'direction': 'in' if is_incoming else 'out',
+                'from': from_address,
+                'to': to_address,
+                'amount': amount,
+                'token': token_info['symbol'],
+                'tokenSymbol': token_info['symbol'],
+                'tokenName': token_info['name'],
+                'status': 'Success' if tx.get('confirmed') else 'Pending',
+                'gasUsed': 0,
+                'gasPrice': 0,
+                'blockNumber': tx.get('block', 0),
+                'confirmations': 0,
+                'contractAddress': contract_address
+            }
+        except Exception as e:
+            logger.error(f"Error parsing Tron TRC-20 transaction: {str(e)}")
+            return None
+    
+    def get_cardano_transactions(self, address: str, start_date: str, end_date: str) -> Dict:
+        """
+        Fetch Cardano transactions using CardanoScan API
+        
+        Args:
+            address: Cardano wallet address (stake address or payment address)
+            start_date: Start date in YYYY-MM-DD format
+            end_date: End date in YYYY-MM-DD format
+        
+        Returns:
+            Dict with balance and transactions
+        """
+        try:
+            base_url = "https://api.cardanoscan.io/api/v1"
+            headers = {}
+            if self.cardanoscan_api_key:
+                headers['apiKey'] = self.cardanoscan_api_key
+            
+            # Convert dates to timestamps
+            start_ts = int(datetime.strptime(start_date, '%Y-%m-%d').timestamp())
+            end_ts = int(datetime.strptime(end_date, '%Y-%m-%d').timestamp())
+            
+            # Get account info
+            account_url = f"{base_url}/account/{address}"
+            self.rate_limiter.wait_if_needed()
+            account_response = self.session.get(account_url, headers=headers, timeout=30)
+            account_response.raise_for_status()
+            account_data = account_response.json()
+            
+            # Get balance in lovelace (1 ADA = 1,000,000 lovelace)
+            balance_lovelace = account_data.get('balance', 0)
+            
+            # Get transactions
+            transactions = []
+            tx_url = f"{base_url}/account/{address}/transactions?page=1&pageSize=50"
+            self.rate_limiter.wait_if_needed()
+            tx_response = self.session.get(tx_url, headers=headers, timeout=30)
+            tx_response.raise_for_status()
+            tx_data = tx_response.json()
+            
+            # Parse transactions
+            if tx_data.get('data'):
+                for tx in tx_data['data']:
+                    tx_time = tx.get('time', 0)
+                    if start_ts <= tx_time <= end_ts:
+                        parsed_tx = self._parse_cardano_tx(tx, address)
+                        if parsed_tx:
+                            transactions.append(parsed_tx)
+            
+            # Sort by timestamp
+            transactions.sort(key=lambda x: x['timestamp'], reverse=True)
+            
+            return {
+                'success': True,
+                'balance': str(balance_lovelace),  # Return as lovelace string
+                'token_balances': {},  # Native tokens can be added later
+                'transactions': transactions,
+                'count': len(transactions)
+            }
+            
+        except Exception as e:
+            logger.error(f"Cardano fetch error: {str(e)}")
+            return {
+                'success': False,
+                'error': str(e),
+                'balance': '0',
+                'transactions': [],
+                'count': 0
+            }
+    
+    def _parse_cardano_tx(self, tx: Dict, user_address: str) -> Optional[Dict]:
+        """Parse Cardano transaction"""
+        try:
+            tx_hash = tx.get('hash', '')
+            timestamp = tx.get('time', 0)
+            
+            # Get inputs and outputs
+            inputs = tx.get('inputs', [])
+            outputs = tx.get('outputs', [])
+            
+            # Calculate if incoming or outgoing
+            user_input_sum = sum(
+                int(inp.get('value', 0)) for inp in inputs 
+                if inp.get('address') == user_address
+            )
+            user_output_sum = sum(
+                int(out.get('value', 0)) for out in outputs 
+                if out.get('address') == user_address
+            )
+            
+            # Net change for user
+            net_change = user_output_sum - user_input_sum
+            is_incoming = net_change > 0
+            amount_lovelace = abs(net_change)
+            amount_ada = amount_lovelace / 1_000_000
+            
+            # Get from/to addresses
+            from_address = inputs[0].get('address', 'Multiple') if inputs else 'Unknown'
+            to_address = outputs[0].get('address', 'Multiple') if outputs else 'Unknown'
+            
+            return {
+                'hash': tx_hash,
+                'timestamp': timestamp,
+                'date': datetime.fromtimestamp(timestamp).isoformat() if timestamp else 'Unknown',
+                'type': 'ADA Transfer',
+                'direction': 'in' if is_incoming else 'out',
+                'from': from_address,
+                'to': to_address,
+                'amount': amount_ada,
+                'token': None,
+                'tokenSymbol': None,
+                'status': 'Success',
+                'gasUsed': 0,
+                'gasPrice': 0,
+                'blockNumber': tx.get('block', 0),
+                'confirmations': tx.get('confirmations', 0),
+                'fee': tx.get('fee', 0) / 1_000_000  # Convert lovelace to ADA
+            }
+        except Exception as e:
+            logger.error(f"Error parsing Cardano transaction: {str(e)}")
             return None
 
 
