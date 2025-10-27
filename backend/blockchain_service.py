@@ -849,9 +849,14 @@ class BlockchainService:
             transfer_response.raise_for_status()
             transfer_data = transfer_response.json()
             
+            logger.info(f"Tron /transfer response: total={transfer_data.get('total', 0)}, rangeTotal={transfer_data.get('rangeTotal', 0)}")
+            
             # Parse TRX/TRC10 transfers
             if transfer_data.get('data'):
-                for tx in transfer_data['data']:
+                logger.info(f"Found {len(transfer_data['data'])} transfers, parsing...")
+                for i, tx in enumerate(transfer_data['data']):
+                    if i < 3:  # Log first 3 for debugging
+                        logger.info(f"Transfer {i}: {tx}")
                     parsed_tx = self._parse_tron_transfer(tx, address)
                     if parsed_tx:
                         transactions.append(parsed_tx)
@@ -945,33 +950,50 @@ class BlockchainService:
     def _parse_tron_transfer(self, tx: Dict, user_address: str) -> Optional[Dict]:
         """Parse Tron TRX/TRC10 transfer from /transfer endpoint"""
         try:
-            # Get transaction details
-            tx_hash = tx.get('transactionHash', '') or tx.get('hash', '')
-            timestamp = tx.get('timestamp', 0) // 1000  # Convert ms to seconds
+            # Get transaction details - field mapping from TronScan API
+            tx_hash = tx.get('transactionHash', '') or tx.get('transaction_id', '') or tx.get('hash', '')
+            timestamp = tx.get('timestamp', 0)
+            if timestamp > 1000000000000:  # If in milliseconds
+                timestamp = timestamp // 1000
             
-            # Determine direction and amount
-            from_address = tx.get('transferFromAddress', '') or tx.get('ownerAddress', '')
-            to_address = tx.get('transferToAddress', '') or tx.get('toAddress', '')
-            is_incoming = to_address == user_address
+            # Determine direction and amount - TronScan uses these fields
+            from_address = tx.get('transferFromAddress', '') or tx.get('from_address', '') or tx.get('ownerAddress', '')
+            to_address = tx.get('transferToAddress', '') or tx.get('to_address', '') or tx.get('toAddress', '')
+            is_incoming = to_address.lower() == user_address.lower() if to_address and user_address else False
             
-            # Get amount (in SUN for TRX, convert to TRX)
-            amount_sun = float(tx.get('amount', 0))
+            # Get amount - TronScan returns amount as string or number
+            amount_raw = tx.get('amount', 0)
+            try:
+                amount_sun = float(amount_raw) if amount_raw else 0
+            except (ValueError, TypeError):
+                logger.warning(f"Could not parse amount: {amount_raw}")
+                amount_sun = 0
             
-            # Check if it's a token transfer (TRC10)
-            token_name = tx.get('tokenName', '')
-            token_abbr = tx.get('tokenAbbr', '')
+            # Check if it's a token transfer (TRC10) - TronScan uses tokenInfo or tokenName
+            token_info = tx.get('tokenInfo', {})
+            token_name = token_info.get('tokenName', '') if token_info else tx.get('tokenName', '')
+            token_abbr = token_info.get('tokenAbbr', '') if token_info else tx.get('tokenAbbr', '')
+            token_id = tx.get('tokenId', '')
             
-            if token_name or token_abbr:
+            if token_name or token_abbr or token_id:
                 # TRC10 token transfer
-                decimals = tx.get('tokenDecimal', 0)
+                decimals = token_info.get('tokenDecimal', 0) if token_info else tx.get('tokenDecimal', 0)
                 amount = amount_sun / (10 ** decimals) if decimals > 0 else amount_sun
-                symbol = token_abbr or token_name
+                symbol = token_abbr or token_name or f"TRC10-{token_id}"
             else:
-                # TRX transfer
+                # TRX transfer - always divide by 1,000,000 (SUN to TRX)
                 amount = amount_sun / 1_000_000
                 symbol = None
             
-            return {
+            # Get block number
+            block_num = tx.get('block', 0) or tx.get('blockNumber', 0)
+            
+            # Determine status
+            confirmed = tx.get('confirmed', True)
+            contract_ret = tx.get('contractRet', 'SUCCESS')
+            status = 'Success' if (confirmed and contract_ret == 'SUCCESS') else 'Failed' if contract_ret != 'SUCCESS' else 'Pending'
+            
+            result = {
                 'hash': tx_hash,
                 'timestamp': timestamp,
                 'date': datetime.fromtimestamp(timestamp).isoformat() if timestamp else 'Unknown',
@@ -980,16 +1002,19 @@ class BlockchainService:
                 'from': from_address,
                 'to': to_address,
                 'amount': amount,
-                'token': None,
+                'token': token_id if token_id else None,
                 'tokenSymbol': symbol,
-                'status': 'Success' if tx.get('confirmed', True) else 'Pending',
+                'status': status,
                 'gasUsed': 0,
                 'gasPrice': 0,
-                'blockNumber': tx.get('block', 0) or tx.get('blockNumber', 0),
+                'blockNumber': block_num,
                 'confirmations': 0
             }
+            
+            return result
+            
         except Exception as e:
-            logger.error(f"Error parsing Tron transfer: {str(e)}")
+            logger.error(f"Error parsing Tron transfer: {str(e)}, tx data: {tx}")
             return None
     
     def _parse_tron_tx(self, tx: Dict, user_address: str) -> Optional[Dict]:
