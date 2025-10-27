@@ -1149,12 +1149,16 @@ class BlockchainService:
             # Get balance in lovelace (returned as string)
             balance_lovelace = balance_data.get('balance', '0')
             
-            # Get transaction list using correct endpoint
+            # IMPORTANT: CardanoScan API requires hex address for transactions, not Bech32
+            # The balance endpoint returns the hex address in the 'hash' field
+            hex_address = balance_data.get('hash', address)
+            
+            # Get transaction list using hex address
             transactions = []
             page_no = 1
             limit = 50
             
-            tx_url = f"{base_url}/transaction/list?address={address}&pageNo={page_no}&limit={limit}&order=desc"
+            tx_url = f"{base_url}/transaction/list?address={hex_address}&pageNo={page_no}&limit={limit}&order=desc"
             self.rate_limiter.wait_if_needed()
             tx_response = self.session.get(tx_url, headers=headers, timeout=30)
             tx_response.raise_for_status()
