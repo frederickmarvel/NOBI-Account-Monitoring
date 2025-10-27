@@ -113,6 +113,10 @@ def get_transactions(blockchain, address):
             result = blockchain_service.get_bitcoin_transactions(address, start_date, end_date)
         elif blockchain == 'solana':
             result = blockchain_service.get_solana_transactions(address, start_date, end_date)
+        elif blockchain == 'tron':
+            result = blockchain_service.get_tron_transactions(address, start_date, end_date)
+        elif blockchain == 'cardano':
+            result = blockchain_service.get_cardano_transactions(address, start_date, end_date)
         elif blockchain in CHAIN_IDS:
             chain_id = CHAIN_IDS[blockchain]
             result = blockchain_service.get_ethereum_transactions(address, chain_id, start_date, end_date)
@@ -145,6 +149,10 @@ def analyze_address(blockchain, address):
             data = blockchain_service.get_bitcoin_transactions(address, start_date, end_date)
         elif blockchain == 'solana':
             data = blockchain_service.get_solana_transactions(address, start_date, end_date)
+        elif blockchain == 'tron':
+            data = blockchain_service.get_tron_transactions(address, start_date, end_date)
+        elif blockchain == 'cardano':
+            data = blockchain_service.get_cardano_transactions(address, start_date, end_date)
         elif blockchain in CHAIN_IDS:
             chain_id = CHAIN_IDS[blockchain]
             data = blockchain_service.get_ethereum_transactions(address, chain_id, start_date, end_date)
