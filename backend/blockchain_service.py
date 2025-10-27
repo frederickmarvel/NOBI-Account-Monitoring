@@ -113,10 +113,10 @@ class BlockchainService:
         'es9vmdgxea8x2fdjrqstqdh7j3z4ntfct3wkxyazxmwg': {'symbol': 'USDCet', 'name': 'USD Coin (Wormhole)', 'decimals': 6},  # Wormhole USDC
         'es9vmfrzacrknmyfld9ryqo9q64i3dqvdwpgvtkdnkp': {'symbol': 'USDT', 'name': 'Tether USD', 'decimals': 6},
         'hz1jovnivvgrgniiyveozevgz58xau3rkwx8eacqbct3': {'symbol': 'PYTH', 'name': 'Pyth Network', 'decimals': 6},
-        '2b1kv6dkpanxd5ixfnxcpjxmkwqjjaaymczfhsfu24gxo': {'symbol': 'PYUSD', 'name': 'PayPal USD', 'decimals': 6},  # Correct PayPal USD
+        '2b1kv6dkpanxd5ixfnxcpjxmkwqjjaymczfhsfu24gxo': {'symbol': 'PYUSD', 'name': 'PayPal USD', 'decimals': 6},  # FIXED: Proper lowercase
         'so11111111111111111111111111111111111111112': {'symbol': 'WSOL', 'name': 'Wrapped SOL', 'decimals': 9},
-        '27g8mtk7vttcchkpasjsddkwwyfoqt6ggeukidvjid4': {'symbol': 'JLP', 'name': 'Jupiter Perps LP', 'decimals': 6},  # Correct JLP
-        '5ovnbeeqvyi1cx3ir8dx5n1p7pdxydbgf2x4txvusjm': {'symbol': 'INF', 'name': 'Infinity', 'decimals': 9},  # Correct INF
+        '27g8mtk7vttcchkpasjsddkwwyfoqt6ggeukidvjidd4': {'symbol': 'JLP', 'name': 'Jupiter Perps LP', 'decimals': 6},  # FIXED: Proper lowercase
+        '5ovnbeeeqvyi1cx3ir8dx5n1p7pdxydbgf2x4txvusjm': {'symbol': 'INF', 'name': 'Infinity', 'decimals': 9},  # FIXED: Proper lowercase
     }
     
     # Tron TRC-20 Token Whitelist (Mainnet)
