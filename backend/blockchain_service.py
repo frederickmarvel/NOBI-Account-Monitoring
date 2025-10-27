@@ -826,8 +826,8 @@ class BlockchainService:
             start_ts = int(datetime.strptime(start_date, '%Y-%m-%d').timestamp() * 1000)
             end_ts = int(datetime.strptime(end_date, '%Y-%m-%d').timestamp() * 1000)
             
-            # Get account info (balance)
-            account_url = f"{base_url}/account?address={address}"
+            # Get account info (balance) - using accountv2 endpoint per TronScan docs
+            account_url = f"{base_url}/accountv2?address={address}"
             self.rate_limiter.wait_if_needed()
             account_response = self.session.get(account_url, timeout=30)
             account_response.raise_for_status()
