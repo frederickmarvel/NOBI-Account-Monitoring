@@ -1026,7 +1026,7 @@ class BlockchainService:
         Fetch Cardano transactions using CardanoScan API
         
         Args:
-            address: Cardano wallet address (stake address or payment address)
+            address: Cardano wallet address (payment address or stake address)
             start_date: Start date in YYYY-MM-DD format
             end_date: End date in YYYY-MM-DD format
         
@@ -1043,39 +1043,65 @@ class BlockchainService:
             start_ts = int(datetime.strptime(start_date, '%Y-%m-%d').timestamp())
             end_ts = int(datetime.strptime(end_date, '%Y-%m-%d').timestamp())
             
-            # Get account info
-            account_url = f"{base_url}/account/{address}"
+            # Get address balance using correct endpoint
+            balance_url = f"{base_url}/address/balance?address={address}"
             self.rate_limiter.wait_if_needed()
-            account_response = self.session.get(account_url, headers=headers, timeout=30)
-            account_response.raise_for_status()
-            account_data = account_response.json()
+            balance_response = self.session.get(balance_url, headers=headers, timeout=30)
+            balance_response.raise_for_status()
+            balance_data = balance_response.json()
             
-            # Get balance in lovelace (1 ADA = 1,000,000 lovelace)
-            balance_lovelace = account_data.get('balance', 0)
+            # Get balance in lovelace (returned as string)
+            balance_lovelace = balance_data.get('balance', '0')
             
-            # Get transactions
+            # Get transaction list using correct endpoint
             transactions = []
-            tx_url = f"{base_url}/account/{address}/transactions?page=1&pageSize=50"
+            page_no = 1
+            limit = 50
+            
+            tx_url = f"{base_url}/transaction/list?address={address}&pageNo={page_no}&limit={limit}&order=desc"
             self.rate_limiter.wait_if_needed()
             tx_response = self.session.get(tx_url, headers=headers, timeout=30)
             tx_response.raise_for_status()
             tx_data = tx_response.json()
             
-            # Parse transactions
-            if tx_data.get('data'):
-                for tx in tx_data['data']:
-                    tx_time = tx.get('time', 0)
-                    if start_ts <= tx_time <= end_ts:
-                        parsed_tx = self._parse_cardano_tx(tx, address)
-                        if parsed_tx:
-                            transactions.append(parsed_tx)
+            # Parse transactions from the list
+            if tx_data.get('transactions'):
+                for tx_summary in tx_data['transactions']:
+                    tx_hash = tx_summary.get('hash')
+                    tx_timestamp = tx_summary.get('timestamp')
+                    
+                    # Convert timestamp to unix timestamp if it's ISO format
+                    if tx_timestamp:
+                        try:
+                            if isinstance(tx_timestamp, str):
+                                # Parse ISO format datetime
+                                tx_time = int(datetime.fromisoformat(tx_timestamp.replace('Z', '+00:00')).timestamp())
+                            else:
+                                tx_time = int(tx_timestamp)
+                        except:
+                            tx_time = 0
+                    else:
+                        tx_time = 0
+                    
+                    # Filter by date range
+                    if tx_time and (start_ts <= tx_time <= end_ts):
+                        # Get full transaction details
+                        detail_url = f"{base_url}/transaction?hash={tx_hash}"
+                        self.rate_limiter.wait_if_needed()
+                        detail_response = self.session.get(detail_url, headers=headers, timeout=30)
+                        
+                        if detail_response.status_code == 200:
+                            tx_detail = detail_response.json()
+                            parsed_tx = self._parse_cardano_tx(tx_detail, address)
+                            if parsed_tx:
+                                transactions.append(parsed_tx)
             
             # Sort by timestamp
             transactions.sort(key=lambda x: x['timestamp'], reverse=True)
             
             return {
                 'success': True,
-                'balance': str(balance_lovelace),  # Return as lovelace string
+                'balance': balance_lovelace,  # Return as lovelace string
                 'token_balances': {},  # Native tokens can be added later
                 'transactions': transactions,
                 'count': len(transactions)
@@ -1092,34 +1118,66 @@ class BlockchainService:
             }
     
     def _parse_cardano_tx(self, tx: Dict, user_address: str) -> Optional[Dict]:
-        """Parse Cardano transaction"""
+        """Parse Cardano transaction from API response"""
         try:
             tx_hash = tx.get('hash', '')
-            timestamp = tx.get('time', 0)
+            timestamp_str = tx.get('timestamp', '')
+            
+            # Parse timestamp - it's in ISO format
+            try:
+                if timestamp_str:
+                    timestamp = int(datetime.fromisoformat(timestamp_str.replace('Z', '+00:00')).timestamp())
+                else:
+                    timestamp = 0
+            except:
+                timestamp = 0
             
             # Get inputs and outputs
             inputs = tx.get('inputs', [])
             outputs = tx.get('outputs', [])
             
-            # Calculate if incoming or outgoing
-            user_input_sum = sum(
-                int(inp.get('value', 0)) for inp in inputs 
-                if inp.get('address') == user_address
-            )
-            user_output_sum = sum(
-                int(out.get('value', 0)) for out in outputs 
-                if out.get('address') == user_address
-            )
+            # Calculate if incoming or outgoing for user
+            user_input_sum = 0
+            user_output_sum = 0
             
-            # Net change for user
+            for inp in inputs:
+                if inp.get('address') == user_address:
+                    # Parse value - it's a string
+                    try:
+                        user_input_sum += int(inp.get('value', '0'))
+                    except:
+                        pass
+            
+            for out in outputs:
+                if out.get('address') == user_address:
+                    # Parse value - it's a string
+                    try:
+                        user_output_sum += int(out.get('value', '0'))
+                    except:
+                        pass
+            
+            # Net change for user (in lovelace)
             net_change = user_output_sum - user_input_sum
             is_incoming = net_change > 0
             amount_lovelace = abs(net_change)
             amount_ada = amount_lovelace / 1_000_000
             
             # Get from/to addresses
-            from_address = inputs[0].get('address', 'Multiple') if inputs else 'Unknown'
-            to_address = outputs[0].get('address', 'Multiple') if outputs else 'Unknown'
+            from_address = inputs[0].get('address', 'Unknown') if inputs else 'Unknown'
+            to_address = outputs[0].get('address', 'Unknown') if outputs else 'Unknown'
+            
+            # Get fee (it's a string in lovelace)
+            try:
+                fee_lovelace = int(tx.get('fees', '0'))
+            except:
+                fee_lovelace = 0
+            fee_ada = fee_lovelace / 1_000_000
+            
+            # Get block height
+            block_height = tx.get('blockHeight', 0)
+            
+            # Status
+            status = 'Success' if tx.get('status', False) else 'Failed'
             
             return {
                 'hash': tx_hash,
@@ -1132,12 +1190,12 @@ class BlockchainService:
                 'amount': amount_ada,
                 'token': None,
                 'tokenSymbol': None,
-                'status': 'Success',
+                'status': status,
                 'gasUsed': 0,
                 'gasPrice': 0,
-                'blockNumber': tx.get('block', 0),
-                'confirmations': tx.get('confirmations', 0),
-                'fee': tx.get('fee', 0) / 1_000_000  # Convert lovelace to ADA
+                'blockNumber': block_height,
+                'confirmations': 0,
+                'fee': fee_ada
             }
         except Exception as e:
             logger.error(f"Error parsing Cardano transaction: {str(e)}")
