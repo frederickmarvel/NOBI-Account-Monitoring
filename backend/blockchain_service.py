@@ -113,7 +113,7 @@ class BlockchainService:
         'es9vmdgxea8x2fdjrqstqdh7j3z4ntfct3wkxyazxmwg': {'symbol': 'USDCet', 'name': 'USD Coin (Wormhole)', 'decimals': 6},  # Wormhole USDC
         'es9vmfrzacrknmyfld9ryqo9q64i3dqvdwpgvtkdnkp': {'symbol': 'USDT', 'name': 'Tether USD', 'decimals': 6},
         'hz1jovnivvgrgniiyveozevgz58xau3rkwx8eacqbct3': {'symbol': 'PYTH', 'name': 'Pyth Network', 'decimals': 6},
-        '5guudfhswki2qma1qjhf6fevhncrhnyadfwnimaууpe4': {'symbol': 'PYUSD', 'name': 'PayPal USD', 'decimals': 6},  # ACTUAL PYUSD mint from user
+        '2b1kv6dkpanxd5ixfnxcpjxmkwqjjaymczfhsfu24gxo': {'symbol': 'PYUSD', 'name': 'PayPal USD', 'decimals': 6},  # ACTUAL PYUSD mint from user
         'so11111111111111111111111111111111111111112': {'symbol': 'WSOL', 'name': 'Wrapped SOL', 'decimals': 9},
         '27g8mtk7vttcchkpasjsddkwwyfoqt6ggeukidvjidd4': {'symbol': 'JLP', 'name': 'Jupiter Perps LP', 'decimals': 6},  # FIXED: Proper lowercase
         '5ovnbeeeqvyi1cx3ir8dx5n1p7pdxydbgf2x4txvusjm': {'symbol': 'INF', 'name': 'Infinity', 'decimals': 9},  # FIXED: Proper lowercase
@@ -601,65 +601,73 @@ class BlockchainService:
     
     def get_solana_token_balances(self, address: str) -> Dict[str, Dict]:
         """
-        Get SPL token balances for a Solana address
+        Get SPL token balances for a Solana address (including Token-2022 tokens like PYUSD)
         Returns dict of token_symbol -> balance info
         """
         try:
             rpc_url = "https://api.mainnet-beta.solana.com"
             token_balances = {}
             
-            # Get all token accounts for this address
-            payload = {
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "getTokenAccountsByOwner",
-                "params": [
-                    address,
-                    {
-                        "programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"  # SPL Token Program
-                    },
-                    {
-                        "encoding": "jsonParsed"
-                    }
-                ]
-            }
+            # IMPORTANT: Query BOTH Token Program AND Token-2022 Program
+            # Token-2022 is used by PYUSD and other modern tokens
+            token_programs = [
+                "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",  # Standard Token Program
+                "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"   # Token-2022 Program (PYUSD!)
+            ]
             
-            self.rate_limiter.wait_if_needed()
-            response = requests.post(rpc_url, json=payload, timeout=30)
-            response.raise_for_status()
-            data = response.json()
-            
-            if 'result' in data and 'value' in data['result']:
-                for account in data['result']['value']:
-                    try:
-                        account_data = account.get('account', {})
-                        parsed_data = account_data.get('data', {}).get('parsed', {})
-                        info = parsed_data.get('info', {})
-                        
-                        # Get mint address (token contract)
-                        mint = info.get('mint', '').lower()
-                        
-                        # Check if token is whitelisted
-                        if mint in self.WHITELISTED_SOLANA_TOKENS:
-                            token_info = self.WHITELISTED_SOLANA_TOKENS[mint]
+            for program_id in token_programs:
+                # Get all token accounts for this address
+                payload = {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "getTokenAccountsByOwner",
+                    "params": [
+                        address,
+                        {
+                            "programId": program_id
+                        },
+                        {
+                            "encoding": "jsonParsed"
+                        }
+                    ]
+                }
+                
+                self.rate_limiter.wait_if_needed()
+                response = requests.post(rpc_url, json=payload, timeout=30)
+                response.raise_for_status()
+                data = response.json()
+                
+                if 'result' in data and 'value' in data['result']:
+                    for account in data['result']['value']:
+                        try:
+                            account_data = account.get('account', {})
+                            parsed_data = account_data.get('data', {}).get('parsed', {})
+                            info = parsed_data.get('info', {})
                             
-                            # Get token balance
-                            token_amount = info.get('tokenAmount', {})
-                            balance = float(token_amount.get('uiAmount', 0))
-                            decimals = token_amount.get('decimals', token_info.get('decimals', 6))
+                            # Get mint address (token contract)
+                            mint = info.get('mint', '').lower()
                             
-                            if balance > 0:  # Only include tokens with balance
-                                token_balances[token_info['symbol']] = {
-                                    'balance': balance,
-                                    'contract': mint,
-                                    'name': token_info['name'],
-                                    'decimals': decimals
-                                }
-                                logger.info(f"Found {token_info['symbol']} balance: {balance}")
-                    
-                    except Exception as e:
-                        logger.warning(f"Error parsing token account: {str(e)}")
-                        continue
+                            # Check if token is whitelisted
+                            if mint in self.WHITELISTED_SOLANA_TOKENS:
+                                token_info = self.WHITELISTED_SOLANA_TOKENS[mint]
+                                
+                                # Get token balance
+                                token_amount = info.get('tokenAmount', {})
+                                balance = float(token_amount.get('uiAmount', 0))
+                                decimals = token_amount.get('decimals', token_info.get('decimals', 6))
+                                
+                                if balance > 0:  # Only include tokens with balance
+                                    token_balances[token_info['symbol']] = {
+                                        'balance': balance,
+                                        'contract': mint,
+                                        'name': token_info['name'],
+                                        'decimals': decimals
+                                    }
+                                    logger.info(f"Found {token_info['symbol']} balance: {balance}")
+                        
+                        except Exception as e:
+                            logger.warning(f"Error parsing token account: {str(e)}")
+                            continue
             
             return token_balances
             
