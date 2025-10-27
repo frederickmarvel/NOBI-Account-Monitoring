@@ -60,6 +60,10 @@ class CurrencyExchangeService:
             'AUSDT': 'tether',  # Aave USDT uses same price as USDT
             'AUSDC': 'usd-coin',  # Aave USDC uses same price as USDC
             'HNST': 'honest-mining', 'PYTH': 'pyth-network',
+            # Solana SPL tokens
+            'PYUSD': 'paypal-usd', 'WSOL': 'wrapped-solana', 
+            'JLP': 'jupiter-perpetuals-liquidity-provider-token', 'INF': 'infinity-2',
+            'USDCet': 'usd-coin',  # Wormhole USDC uses same price as USDC
         }
         
         # Build list of unique CoinGecko IDs
