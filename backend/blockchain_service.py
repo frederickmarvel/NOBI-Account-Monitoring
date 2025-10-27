@@ -1192,7 +1192,8 @@ class BlockchainService:
                         
                         if detail_response.status_code == 200:
                             tx_detail = detail_response.json()
-                            parsed_tx = self._parse_cardano_tx(tx_detail, address)
+                            # IMPORTANT: Pass hex_address, not Bech32 address for comparison
+                            parsed_tx = self._parse_cardano_tx(tx_detail, hex_address)
                             if parsed_tx:
                                 transactions.append(parsed_tx)
             
