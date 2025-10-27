@@ -841,22 +841,20 @@ class BlockchainService:
             # Get balance in SUN (1 TRX = 1,000,000 SUN)
             balance_sun = account_data.get('balance', 0)
             
-            # Get TRX transfers
+            # Get TRX & TRC10 transfers using /transfer endpoint (correct per docs)
             transactions = []
-            trx_url = f"{base_url}/transaction?sort=-timestamp&count=true&limit=50&start=0&address={address}"
+            transfer_url = f"{base_url}/transfer?sort=-timestamp&count=true&limit=50&start=0&address={address}&start_timestamp={start_ts}&end_timestamp={end_ts}&filterTokenValue=1"
             self.rate_limiter.wait_if_needed()
-            trx_response = self.session.get(trx_url, headers=headers, timeout=30)
-            trx_response.raise_for_status()
-            trx_data = trx_response.json()
+            transfer_response = self.session.get(transfer_url, headers=headers, timeout=30)
+            transfer_response.raise_for_status()
+            transfer_data = transfer_response.json()
             
-            # Parse TRX transactions
-            if trx_data.get('data'):
-                for tx in trx_data['data']:
-                    tx_time = tx.get('timestamp', 0)
-                    if start_ts <= tx_time <= end_ts:
-                        parsed_tx = self._parse_tron_tx(tx, address)
-                        if parsed_tx:
-                            transactions.append(parsed_tx)
+            # Parse TRX/TRC10 transfers
+            if transfer_data.get('data'):
+                for tx in transfer_data['data']:
+                    parsed_tx = self._parse_tron_transfer(tx, address)
+                    if parsed_tx:
+                        transactions.append(parsed_tx)
             
             # Get TRC-20 token transfers
             trc20_url = f"{base_url}/token_trc20/transfers?relatedAddress={address}&limit=50&start=0"
@@ -943,6 +941,56 @@ class BlockchainService:
         except Exception as e:
             logger.error(f"Error fetching Tron token balances: {str(e)}")
             return {}
+    
+    def _parse_tron_transfer(self, tx: Dict, user_address: str) -> Optional[Dict]:
+        """Parse Tron TRX/TRC10 transfer from /transfer endpoint"""
+        try:
+            # Get transaction details
+            tx_hash = tx.get('transactionHash', '') or tx.get('hash', '')
+            timestamp = tx.get('timestamp', 0) // 1000  # Convert ms to seconds
+            
+            # Determine direction and amount
+            from_address = tx.get('transferFromAddress', '') or tx.get('ownerAddress', '')
+            to_address = tx.get('transferToAddress', '') or tx.get('toAddress', '')
+            is_incoming = to_address == user_address
+            
+            # Get amount (in SUN for TRX, convert to TRX)
+            amount_sun = float(tx.get('amount', 0))
+            
+            # Check if it's a token transfer (TRC10)
+            token_name = tx.get('tokenName', '')
+            token_abbr = tx.get('tokenAbbr', '')
+            
+            if token_name or token_abbr:
+                # TRC10 token transfer
+                decimals = tx.get('tokenDecimal', 0)
+                amount = amount_sun / (10 ** decimals) if decimals > 0 else amount_sun
+                symbol = token_abbr or token_name
+            else:
+                # TRX transfer
+                amount = amount_sun / 1_000_000
+                symbol = None
+            
+            return {
+                'hash': tx_hash,
+                'timestamp': timestamp,
+                'date': datetime.fromtimestamp(timestamp).isoformat() if timestamp else 'Unknown',
+                'type': f'{symbol} Transfer' if symbol else 'TRX Transfer',
+                'direction': 'in' if is_incoming else 'out',
+                'from': from_address,
+                'to': to_address,
+                'amount': amount,
+                'token': None,
+                'tokenSymbol': symbol,
+                'status': 'Success' if tx.get('confirmed', True) else 'Pending',
+                'gasUsed': 0,
+                'gasPrice': 0,
+                'blockNumber': tx.get('block', 0) or tx.get('blockNumber', 0),
+                'confirmations': 0
+            }
+        except Exception as e:
+            logger.error(f"Error parsing Tron transfer: {str(e)}")
+            return None
     
     def _parse_tron_tx(self, tx: Dict, user_address: str) -> Optional[Dict]:
         """Parse Tron TRX transaction"""
