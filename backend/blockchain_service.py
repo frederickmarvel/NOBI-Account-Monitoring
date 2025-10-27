@@ -826,10 +826,15 @@ class BlockchainService:
             start_ts = int(datetime.strptime(start_date, '%Y-%m-%d').timestamp() * 1000)
             end_ts = int(datetime.strptime(end_date, '%Y-%m-%d').timestamp() * 1000)
             
+            # Prepare headers with API key
+            headers = {}
+            if self.tronscan_api_key:
+                headers['TRON-PRO-API-KEY'] = self.tronscan_api_key
+            
             # Get account info (balance) - using accountv2 endpoint per TronScan docs
             account_url = f"{base_url}/accountv2?address={address}"
             self.rate_limiter.wait_if_needed()
-            account_response = self.session.get(account_url, timeout=30)
+            account_response = self.session.get(account_url, headers=headers, timeout=30)
             account_response.raise_for_status()
             account_data = account_response.json()
             
@@ -840,7 +845,7 @@ class BlockchainService:
             transactions = []
             trx_url = f"{base_url}/transaction?sort=-timestamp&count=true&limit=50&start=0&address={address}"
             self.rate_limiter.wait_if_needed()
-            trx_response = self.session.get(trx_url, timeout=30)
+            trx_response = self.session.get(trx_url, headers=headers, timeout=30)
             trx_response.raise_for_status()
             trx_data = trx_response.json()
             
@@ -856,7 +861,7 @@ class BlockchainService:
             # Get TRC-20 token transfers
             trc20_url = f"{base_url}/token_trc20/transfers?relatedAddress={address}&limit=50&start=0"
             self.rate_limiter.wait_if_needed()
-            trc20_response = self.session.get(trc20_url, timeout=30)
+            trc20_response = self.session.get(trc20_url, headers=headers, timeout=30)
             trc20_response.raise_for_status()
             trc20_data = trc20_response.json()
             
@@ -899,10 +904,15 @@ class BlockchainService:
             base_url = "https://apilist.tronscanapi.com/api"
             token_balances = {}
             
+            # Prepare headers with API key
+            headers = {}
+            if self.tronscan_api_key:
+                headers['TRON-PRO-API-KEY'] = self.tronscan_api_key
+            
             # Get account tokens
             url = f"{base_url}/account/tokens?address={address}&start=0&limit=20"
             self.rate_limiter.wait_if_needed()
-            response = self.session.get(url, timeout=30)
+            response = self.session.get(url, headers=headers, timeout=30)
             response.raise_for_status()
             data = response.json()
             
