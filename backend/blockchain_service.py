@@ -109,9 +109,14 @@ class BlockchainService:
     # Solana SPL Token Whitelist (stored in lowercase for case-insensitive comparison)
     WHITELISTED_SOLANA_TOKENS = {
         'hnstrzjneey2qoyd5d6t48kw2xymyhwvgt61hm5bahj': {'symbol': 'HNST', 'name': 'Honest', 'decimals': 6},
-        'es9vmdgxea8x2fdjrqstqdh7j3z4ntfct3wkxyazxmwg': {'symbol': 'USDC', 'name': 'USD Coin', 'decimals': 6},
+        'epjfwdd5aufqssqem2qn1xzybapc8g4weggkzwytdt1v': {'symbol': 'USDC', 'name': 'USD Coin', 'decimals': 6},  # Circle USDC
+        'es9vmdgxea8x2fdjrqstqdh7j3z4ntfct3wkxyazxmwg': {'symbol': 'USDCet', 'name': 'USD Coin (Wormhole)', 'decimals': 6},  # Wormhole USDC
         'es9vmfrzacrknmyfld9ryqo9q64i3dqvdwpgvtkdnkp': {'symbol': 'USDT', 'name': 'Tether USD', 'decimals': 6},
         'hz1jovnivvgrgniiyveozevgz58xau3rkwx8eacqbct3': {'symbol': 'PYTH', 'name': 'Pyth Network', 'decimals': 6},
+        '2b1kv6dkpanxd5xzqm6ybrxw4hs86dzvjxhvehvdp4dx': {'symbol': 'PYUSD', 'name': 'PayPal USD', 'decimals': 6},
+        'so11111111111111111111111111111111111111112': {'symbol': 'WSOL', 'name': 'Wrapped SOL', 'decimals': 9},
+        '27g8mqtjkamg5u34tlhchmxh89anrzc7e1xvbghhjkqvdwhkylx': {'symbol': 'JLP', 'name': 'Jupiter Perps LP', 'decimals': 6},
+        '5omqjnrd46u3mefkjrmjggf7ts8chl7bkhicmqx3xpvhvemf': {'symbol': 'INF', 'name': 'Infinity', 'decimals': 9},
     }
     
     # Tron TRC-20 Token Whitelist (Mainnet)
