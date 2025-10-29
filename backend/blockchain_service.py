@@ -540,11 +540,11 @@ class BlockchainService:
                 start_ts = int(datetime.strptime(start_date, '%Y-%m-%d').timestamp())
                 end_ts = int(datetime.strptime(end_date, '%Y-%m-%d').timestamp())
                 
-                for sig_info in sig_data['result'][:20]:  # Limit to 20 transactions to avoid timeout
+                for sig_info in sig_data['result'][:50]:  # Increased limit for more transactions
                     # Check if transaction is in date range
                     tx_time = sig_info.get('blockTime', 0)
                     if tx_time and start_ts <= tx_time <= end_ts:
-                        # Get transaction details
+                        # Try to get transaction details (may fail for old transactions)
                         tx_payload = {
                             "jsonrpc": "2.0",
                             "id": 1,
@@ -560,12 +560,37 @@ class BlockchainService:
                         
                         self.rate_limiter.wait_if_needed()
                         tx_response = requests.post(rpc_url, json=tx_payload, timeout=30)
+                        parsed_tx = None
+                        
                         if tx_response.status_code == 200:
                             tx_data = tx_response.json()
                             if 'result' in tx_data and tx_data['result']:
                                 parsed_tx = self._parse_solana_tx(tx_data['result'], address, sig_info['signature'])
-                                if parsed_tx:
-                                    transactions.append(parsed_tx)
+                        
+                        # Fallback: If no details available, create basic transaction from signature
+                        if not parsed_tx:
+                            parsed_tx = {
+                                'hash': sig_info['signature'],
+                                'timestamp': tx_time,
+                                'date': datetime.fromtimestamp(tx_time).isoformat() if tx_time else 'Unknown',
+                                'type': 'Transaction',
+                                'direction': 'unknown',
+                                'from': 'Unknown',
+                                'to': 'Unknown',
+                                'amount': 0,
+                                'token': None,
+                                'tokenSymbol': None,
+                                'tokenName': None,
+                                'status': 'Failed' if sig_info.get('err') else 'Success',
+                                'gasUsed': 0,
+                                'gasPrice': 0,
+                                'blockNumber': sig_info.get('slot', 0),
+                                'confirmations': 0,
+                                'fee': 0
+                            }
+                        
+                        if parsed_tx:
+                            transactions.append(parsed_tx)
             
             logger.info(f"Found {len(transactions)} Solana transactions for {address}")
             
