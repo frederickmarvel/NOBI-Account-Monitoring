@@ -564,7 +564,12 @@ class BlockchainService:
             
             # Parse transactions and calculate opening balances
             transactions = []
+            transactions_reversed = 0
+            token_transactions_reversed = 0
+            
             if 'result' in sig_data:
+                logger.info(f"Processing {len(sig_data['result'])} transaction signatures...")
+                
                 for sig_info in sig_data['result']:
                     tx_time = sig_info.get('blockTime', 0)
                     if not tx_time:
@@ -659,7 +664,8 @@ class BlockchainService:
                                             # Was outgoing, add back to get opening balance
                                             opening_token_balances[token_symbol]['balance'] += amount
                                         
-                                        logger.info(f"Reversed {token_symbol} tx: {direction} {amount}, new opening balance: {opening_token_balances[token_symbol]['balance']}")
+                                        token_transactions_reversed += 1
+                                        logger.info(f"✅ Reversed {token_symbol} tx: {direction} {amount}, new opening: {opening_token_balances[token_symbol]['balance']}")
                                     
                                     elif not token_symbol:
                                         # This is a SOL transfer - reverse it for SOL opening balance
@@ -672,6 +678,14 @@ class BlockchainService:
                                         elif parsed_tx.get('direction') == 'out':
                                             # Was outgoing, add back (including fee)
                                             opening_balance_lamports += (amount_lamports + fee_lamports)
+                                        
+                                        transactions_reversed += 1
+            
+            logger.info(f"📊 REVERSAL STATS:")
+            logger.info(f"   - Total signatures processed: {len(sig_data.get('result', []))}")
+            logger.info(f"   - SOL transactions reversed: {transactions_reversed}")
+            logger.info(f"   - Token transactions reversed: {token_transactions_reversed}")
+            logger.info(f"   - Transactions in date range: {len(transactions)}")
             
             logger.info(f"Found {len(transactions)} Solana transactions for {address} (from {start_date} to {end_date})")
             logger.info(f"Opening balance (as of {opening_balance_date}): {opening_balance_lamports / 1e9} SOL")
