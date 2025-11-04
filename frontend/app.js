@@ -601,13 +601,28 @@ const ui = {
           <td><span class="status status--${tx.status.toLowerCase()}">${tx.status}</span></td>
           <td>
             <div class="transaction-actions">
-              <button class="action-btn edit-tx-btn" onclick="balanceEditor.editTransaction('${tx.hash}')" title="Edit">✏️</button>
-              <button class="action-btn delete-tx-btn" onclick="balanceEditor.deleteTransaction('${tx.hash}')" title="Delete">🗑</button>
+              <button class="action-btn edit-tx-btn" data-tx-hash="${tx.hash}" title="Edit">✏️</button>
+              <button class="action-btn delete-tx-btn" data-tx-hash="${tx.hash}" title="Delete">🗑</button>
             </div>
           </td>
         </tr>
       `;
     }).join('');
+    
+    // Add event listeners to edit and delete buttons
+    tbody.querySelectorAll('.edit-tx-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const hash = e.target.getAttribute('data-tx-hash');
+        balanceEditor.editTransaction(hash);
+      });
+    });
+    
+    tbody.querySelectorAll('.delete-tx-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const hash = e.target.getAttribute('data-tx-hash');
+        balanceEditor.deleteTransaction(hash);
+      });
+    });
   },
   
   updatePagination: () => {
@@ -854,8 +869,8 @@ const balanceEditor = {
       AppState.filteredTransactions = AppState.filteredTransactions.filter(tx => tx.hash !== txHash);
       
       // Re-render table
-      transactionManager.renderTransactions();
-      transactionManager.updatePagination();
+      transactionManager.renderCurrentPage();
+      ui.updatePagination();
       
       ui.showToast('Transaction deleted. It will be excluded from exports.', 'success');
     }
@@ -863,7 +878,11 @@ const balanceEditor = {
 
   editTransaction: (txHash) => {
     const tx = AppState.filteredTransactions.find(t => t.hash === txHash);
-    if (!tx) return;
+    if (!tx) {
+      console.error('Transaction not found:', txHash);
+      ui.showToast('Transaction not found', 'error');
+      return;
+    }
     
     // Create modal
     const modal = document.createElement('div');
@@ -872,7 +891,7 @@ const balanceEditor = {
       <div class="modal-content">
         <div class="modal-header">
           <h3>Edit Transaction</h3>
-          <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">✕</button>
+          <button class="modal-close">✕</button>
         </div>
         <div class="modal-body">
           <div class="form-group">
@@ -889,7 +908,7 @@ const balanceEditor = {
           </div>
           <div class="form-group">
             <label>From/To</label>
-            <input type="text" id="edit-tx-from" value="${tx.from || ''}">
+            <input type="text" id="edit-tx-from" value="${tx.from || tx.to || ''}">
           </div>
           <div class="form-group">
             <label>Amount</label>
@@ -897,33 +916,52 @@ const balanceEditor = {
           </div>
           <div class="form-group">
             <label>Token</label>
-            <input type="text" id="edit-tx-token" value="${tx.token}">
+            <input type="text" id="edit-tx-token" value="${tx.tokenSymbol || tx.token || ''}">
           </div>
           <div class="form-group">
             <label>USD Value</label>
-            <input type="number" step="any" id="edit-tx-usd" value="${tx.usd || 0}">
+            <input type="number" step="any" id="edit-tx-usd" value="${tx.usdValue || tx.usd || 0}">
           </div>
         </div>
         <div class="modal-footer">
-          <button class="modal-cancel" onclick="this.closest('.modal-overlay').remove()">Cancel</button>
-          <button class="modal-save" id="save-tx-edit">Save Changes</button>
+          <button class="modal-cancel">Cancel</button>
+          <button class="modal-save">Save Changes</button>
         </div>
       </div>
     `;
     
     document.body.appendChild(modal);
     
+    // Close button handler
+    modal.querySelector('.modal-close').addEventListener('click', () => {
+      modal.remove();
+    });
+    
+    // Cancel button handler
+    modal.querySelector('.modal-cancel').addEventListener('click', () => {
+      modal.remove();
+    });
+    
+    // Click outside to close
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) {
+        modal.remove();
+      }
+    });
+    
     // Save handler
-    document.getElementById('save-tx-edit').addEventListener('click', () => {
+    modal.querySelector('.modal-save').addEventListener('click', () => {
       tx.date = document.getElementById('edit-tx-date').value;
       tx.type = document.getElementById('edit-tx-type').value;
       tx.from = document.getElementById('edit-tx-from').value;
       tx.amount = parseFloat(document.getElementById('edit-tx-amount').value) || 0;
       tx.token = document.getElementById('edit-tx-token').value;
+      tx.tokenSymbol = document.getElementById('edit-tx-token').value;
       tx.usd = parseFloat(document.getElementById('edit-tx-usd').value) || 0;
+      tx.usdValue = parseFloat(document.getElementById('edit-tx-usd').value) || 0;
       tx.edited = true; // Mark as edited
       
-      transactionManager.renderTransactions();
+      transactionManager.renderCurrentPage();
       modal.remove();
       ui.showToast('Transaction updated successfully', 'success');
     });
