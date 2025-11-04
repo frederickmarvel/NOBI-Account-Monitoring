@@ -264,23 +264,34 @@ def export_pdf(blockchain, address):
         prices = prices_data.get(crypto_symbol, {'usd': 0, 'aed': 0})
         
         balance_raw = float(data.get('balance', 0))
+        opening_balance_raw = data.get('opening_balance')
+        opening_balance_date = data.get('opening_balance_date')
+        
         if blockchain == 'bitcoin':
             balance = balance_raw / 1e8
+            opening_balance = float(opening_balance_raw) / 1e8 if opening_balance_raw else None
         elif blockchain == 'solana':
             balance = balance_raw / 1e9  # lamports to SOL
+            opening_balance = float(opening_balance_raw) / 1e9 if opening_balance_raw else None
         elif blockchain == 'tron':
             balance = balance_raw / 1e6  # SUN to TRX
+            opening_balance = float(opening_balance_raw) / 1e6 if opening_balance_raw else None
         elif blockchain == 'cardano':
             balance = balance_raw / 1e6  # lovelace to ADA
+            opening_balance = float(opening_balance_raw) / 1e6 if opening_balance_raw else None
         elif blockchain == 'ethereum' or blockchain in ['polygon', 'bsc', 'arbitrum', 'optimism', 'base', 'blast', 'linea', 'scroll', 'zksync']:
             balance = balance_raw / 1e18
+            opening_balance = float(opening_balance_raw) / 1e18 if opening_balance_raw else None
         else:
             balance = balance_raw
+            opening_balance = float(opening_balance_raw) if opening_balance_raw else None
         
         transactions = data.get('transactions', [])
         if transactions:
             print(f"DEBUG BACKEND: First 3 transaction amounts: {[tx.get('amount', 'N/A') for tx in transactions[:3]]}")
             print(f"DEBUG BACKEND: Balance raw: {balance_raw}, Balance converted: {balance}")
+            if opening_balance:
+                print(f"DEBUG BACKEND: Opening balance (as of {opening_balance_date}): {opening_balance}")
         
         # Get token balances and prices for EVM chains and Solana
         token_balances_with_prices = {}
@@ -347,7 +358,9 @@ def export_pdf(blockchain, address):
             date_range={'start': start_date, 'end': end_date},
             token_balances=token_balances_with_prices,
             token_prices=token_prices_dict,  # Pass pre-fetched token prices
-            usd_to_aed_rate=usd_to_aed_rate  # Pass exchange rate
+            usd_to_aed_rate=usd_to_aed_rate,  # Pass exchange rate
+            opening_balance=opening_balance,  # Pass opening balance if available
+            opening_balance_date=opening_balance_date  # Pass opening balance date
         )
         
         pdf_buffer = io.BytesIO(pdf_bytes)

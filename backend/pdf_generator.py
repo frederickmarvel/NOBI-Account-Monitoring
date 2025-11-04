@@ -58,7 +58,9 @@ class PDFReportGenerator:
         date_range: Dict[str, str],
         token_balances: Dict[str, Dict] = None,
         token_prices: Dict[str, Dict] = None,
-        usd_to_aed_rate: float = 3.67
+        usd_to_aed_rate: float = 3.67,
+        opening_balance: float = None,
+        opening_balance_date: str = None
     ) -> bytes:
         """
         Generate PDF account statement
@@ -96,8 +98,43 @@ class PDFReportGenerator:
         elements.append(account_info)
         elements.append(Spacer(1, 0.2*inch))
         
-        # Combined Portfolio Holdings (Native + Tokens in one table)
-        portfolio_heading = Paragraph("Portfolio Holdings", self.styles['CustomHeading'])
+        # Opening Balance (if provided)
+        if opening_balance is not None and opening_balance_date:
+            opening_heading = Paragraph(f"Opening Balance (as of {opening_balance_date})", self.styles['CustomHeading'])
+            elements.append(opening_heading)
+            elements.append(Spacer(1, 0.1*inch))
+            
+            opening_value_usd = opening_balance * prices['usd']
+            opening_value_aed = opening_value_usd * usd_to_aed_rate
+            
+            opening_data = [
+                ['Asset', 'Balance', 'USD Value', 'AED Value'],
+                [
+                    crypto_symbol,
+                    f"{opening_balance:.6f}",
+                    f"${opening_value_usd:,.2f}",
+                    f"AED {opening_value_aed:,.2f}"
+                ]
+            ]
+            
+            opening_table = Table(opening_data, colWidths=[1.5*inch, 1.5*inch, 1.5*inch, 1.5*inch])
+            opening_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#34495e')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 10),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+                ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#ecf0f1')),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                ('FONTNAME', (0, 1), (-1, -1), 'Helvetica-Bold'),
+            ]))
+            
+            elements.append(opening_table)
+            elements.append(Spacer(1, 0.3*inch))
+        
+        # Current Portfolio Holdings (Native + Tokens in one table)
+        portfolio_heading = Paragraph("Current Portfolio Holdings", self.styles['CustomHeading'])
         elements.append(portfolio_heading)
         elements.append(Spacer(1, 0.1*inch))
         

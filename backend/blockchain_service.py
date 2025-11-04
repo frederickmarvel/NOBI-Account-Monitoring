@@ -491,13 +491,13 @@ class BlockchainService:
     def get_solana_transactions(self, address: str, start_date: str, end_date: str) -> Dict:
         """
         Fetch Solana transactions using public Solana RPC
-        Note: Solscan Pro API v2.0 requires paid subscription, using free RPC instead
+        If start_date is 2025-04-01, will calculate opening balance as of 2025-03-31
         """
         try:
             # Use public Solana RPC endpoint (FREE)
             rpc_url = "https://api.mainnet-beta.solana.com"
             
-            # Get account balance
+            # Get current account balance
             balance_payload = {
                 "jsonrpc": "2.0",
                 "id": 1,
@@ -510,12 +510,12 @@ class BlockchainService:
             balance_response.raise_for_status()
             balance_data = balance_response.json()
             
-            # Get lamports balance
-            lamports = 0
+            # Get current lamports balance
+            current_lamports = 0
             if 'result' in balance_data and 'value' in balance_data['result']:
-                lamports = balance_data['result']['value']
+                current_lamports = balance_data['result']['value']
             
-            # Get transaction signatures
+            # Get transaction signatures (fetch more for opening balance calculation)
             sig_payload = {
                 "jsonrpc": "2.0",
                 "id": 1,
@@ -523,7 +523,7 @@ class BlockchainService:
                 "params": [
                     address,
                     {
-                        "limit": 100  # Max signatures to fetch
+                        "limit": 1000  # Fetch more for better opening balance accuracy
                     }
                 ]
             }
@@ -533,17 +533,32 @@ class BlockchainService:
             sig_response.raise_for_status()
             sig_data = sig_response.json()
             
-            # Parse transactions
+            # Convert dates to timestamps
+            start_ts = int(datetime.strptime(start_date, '%Y-%m-%d').timestamp())
+            end_ts = int(datetime.strptime(end_date, '%Y-%m-%d').timestamp())
+            
+            # Calculate opening balance (balance at end of day before start_date)
+            # For example: if start_date is 2025-04-01, opening balance is as of 2025-03-31 23:59:59
+            opening_balance_lamports = current_lamports
+            opening_balance_date = None
+            
+            # Check if we need to calculate opening balance (if start_date > earliest transaction)
+            from datetime import timedelta
+            start_datetime = datetime.strptime(start_date, '%Y-%m-%d')
+            opening_datetime = start_datetime - timedelta(days=1)  # Day before start_date
+            opening_ts = int(opening_datetime.replace(hour=23, minute=59, second=59).timestamp())
+            opening_balance_date = opening_datetime.strftime('%Y-%m-%d')
+            
+            # Parse transactions and calculate opening balance
             transactions = []
             if 'result' in sig_data:
-                # Convert dates to timestamps
-                start_ts = int(datetime.strptime(start_date, '%Y-%m-%d').timestamp())
-                end_ts = int(datetime.strptime(end_date, '%Y-%m-%d').timestamp())
-                
-                for sig_info in sig_data['result'][:50]:  # Increased limit for more transactions
-                    # Check if transaction is in date range
+                for sig_info in sig_data['result']:
                     tx_time = sig_info.get('blockTime', 0)
-                    if tx_time and start_ts <= tx_time <= end_ts:
+                    if not tx_time:
+                        continue
+                    
+                    # Only fetch details for transactions in our date range
+                    if start_ts <= tx_time <= end_ts:
                         # Try to get transaction details (may fail for old transactions)
                         tx_payload = {
                             "jsonrpc": "2.0",
@@ -591,15 +606,54 @@ class BlockchainService:
                         
                         if parsed_tx:
                             transactions.append(parsed_tx)
+                    
+                    # For opening balance: reverse transactions that happened AFTER the opening date
+                    elif tx_time > opening_ts:
+                        # Fetch this transaction to reverse it for opening balance
+                        tx_payload = {
+                            "jsonrpc": "2.0",
+                            "id": 1,
+                            "method": "getTransaction",
+                            "params": [
+                                sig_info['signature'],
+                                {
+                                    "encoding": "jsonParsed",
+                                    "maxSupportedTransactionVersion": 0
+                                }
+                            ]
+                        }
+                        
+                        self.rate_limiter.wait_if_needed()
+                        tx_response = requests.post(rpc_url, json=tx_payload, timeout=30)
+                        
+                        if tx_response.status_code == 200:
+                            tx_data = tx_response.json()
+                            if 'result' in tx_data and tx_data['result']:
+                                parsed_tx = self._parse_solana_tx(tx_data['result'], address, sig_info['signature'])
+                                if parsed_tx:
+                                    # Reverse the transaction
+                                    amount_lamports = int(float(parsed_tx.get('amount', 0)) * 1e9)
+                                    fee_lamports = parsed_tx.get('fee', 0)
+                                    
+                                    if parsed_tx.get('direction') == 'in':
+                                        # Was incoming, subtract from current to get opening
+                                        opening_balance_lamports -= amount_lamports
+                                    elif parsed_tx.get('direction') == 'out':
+                                        # Was outgoing, add back (including fee)
+                                        opening_balance_lamports += (amount_lamports + fee_lamports)
             
-            logger.info(f"Found {len(transactions)} Solana transactions for {address}")
+            logger.info(f"Found {len(transactions)} Solana transactions for {address} (from {start_date} to {end_date})")
+            logger.info(f"Opening balance (as of {opening_balance_date}): {opening_balance_lamports / 1e9} SOL")
+            logger.info(f"Current balance: {current_lamports / 1e9} SOL")
             
             # Get SPL token balances
             token_balances = self.get_solana_token_balances(address)
             
             return {
                 'success': True,
-                'balance': str(int(lamports)),  # Return as lamports string
+                'balance': str(int(current_lamports)),
+                'opening_balance': str(int(opening_balance_lamports)),
+                'opening_balance_date': opening_balance_date,
                 'transactions': transactions,
                 'token_balances': token_balances,
                 'count': len(transactions)
