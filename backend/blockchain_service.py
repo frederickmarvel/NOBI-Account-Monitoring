@@ -913,7 +913,26 @@ class BlockchainService:
             # Get account keys
             account_keys = message.get('accountKeys', [])
             if not account_keys:
-                return None
+                # Return a basic transaction with link instead of None
+                return {
+                    'hash': signature,
+                    'timestamp': block_time,
+                    'date': datetime.fromtimestamp(block_time).isoformat() if block_time else 'Unknown',
+                    'type': 'See Transaction',
+                    'direction': 'unknown',
+                    'from': f'solscan.io/tx/{signature}',
+                    'to': f'View Details',
+                    'amount': 0,
+                    'token': None,
+                    'tokenSymbol': None,
+                    'tokenName': None,
+                    'status': 'Unknown',
+                    'gasUsed': 0,
+                    'gasPrice': 0,
+                    'blockNumber': tx.get('slot', 0),
+                    'confirmations': 0,
+                    'fee': meta.get('fee', 0) / 1e9 if meta.get('fee') else 0
+                }
             
             # Initialize transaction type detection
             tx_type = 'Transfer'
@@ -1124,7 +1143,30 @@ class BlockchainService:
                     break
             
             if user_index == -1:
-                return None
+                # User not directly involved - show transaction link for inspection
+                from_key = account_keys[0] if isinstance(account_keys[0], str) else account_keys[0].get('pubkey', '')
+                to_key = account_keys[1] if len(account_keys) >= 2 else ''
+                to_key = to_key if isinstance(to_key, str) else to_key.get('pubkey', '') if to_key else ''
+                
+                return {
+                    'hash': signature,
+                    'timestamp': block_time,
+                    'date': datetime.fromtimestamp(block_time).isoformat() if block_time else 'Unknown',
+                    'type': f'{tx_type} (Indirect)',
+                    'direction': 'unknown',
+                    'from': from_key[:8] + '...' if from_key else 'solscan.io',
+                    'to': f'/tx/{signature[:8]}...',
+                    'amount': 0,
+                    'token': None,
+                    'tokenSymbol': None,
+                    'tokenName': None,
+                    'status': 'See Explorer',
+                    'gasUsed': 0,
+                    'gasPrice': 0,
+                    'blockNumber': tx.get('slot', 0),
+                    'confirmations': 0,
+                    'fee': meta.get('fee', 0) / 1e9
+                }
             
             # Calculate balance change
             balance_change = 0
@@ -1174,8 +1216,31 @@ class BlockchainService:
                 'fee': fee
             }
         except Exception as e:
-            logger.error(f"Error parsing Solana transaction: {str(e)}")
-            return None
+            logger.error(f"Error parsing Solana transaction {signature}: {str(e)}")
+            # Return a basic transaction with link instead of None
+            try:
+                block_time = tx.get('blockTime', 0) if tx else 0
+                return {
+                    'hash': signature,
+                    'timestamp': block_time,
+                    'date': datetime.fromtimestamp(block_time).isoformat() if block_time else 'Unknown',
+                    'type': 'Parse Error',
+                    'direction': 'unknown',
+                    'from': 'See Explorer',
+                    'to': f'solscan.io/tx/{signature[:12]}...',
+                    'amount': 0,
+                    'token': None,
+                    'tokenSymbol': None,
+                    'tokenName': None,
+                    'status': 'Check Link',
+                    'gasUsed': 0,
+                    'gasPrice': 0,
+                    'blockNumber': tx.get('slot', 0) if tx else 0,
+                    'confirmations': 0,
+                    'fee': 0
+                }
+            except:
+                return None
     
     def get_tron_transactions(self, address: str, start_date: str, end_date: str) -> Dict:
         """

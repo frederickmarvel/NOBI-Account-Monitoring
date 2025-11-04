@@ -437,7 +437,15 @@ class PDFReportGenerator:
             else:
                 addr = tx.get('to', 'Unknown')
             
-            addr_short = f"{addr[:6]}...{addr[-4:]}" if len(addr) > 10 else addr
+            # Check if this is a problematic transaction (See Explorer, Parse Error, etc.)
+            if addr.startswith('solscan.io') or addr == 'See Explorer':
+                # Show transaction hash link instead
+                tx_hash = tx.get('hash', '')
+                addr_short = f"solscan.io/tx/{tx_hash[:8]}..."
+            elif len(addr) > 10:
+                addr_short = f"{addr[:6]}...{addr[-4:]}"
+            else:
+                addr_short = addr
             
             data.append([
                 date,
