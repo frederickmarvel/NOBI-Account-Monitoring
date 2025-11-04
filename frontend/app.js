@@ -1092,9 +1092,15 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('prev-btn').addEventListener('click', () => transactionManager.changePage('prev'));
   document.getElementById('next-btn').addEventListener('click', () => transactionManager.changePage('next'));
   
-  // Export buttons
+  // Export buttons (transaction section)
   document.getElementById('export-pdf-btn').addEventListener('click', exportManager.exportToPDF);
   document.getElementById('export-csv-btn').addEventListener('click', exportManager.exportToCSV);
+  
+  // Export buttons (export section - alternate IDs)
+  const pdfBtnAlt = document.getElementById('export-pdf-btn-alt');
+  const csvBtnAlt = document.getElementById('export-csv-btn-alt');
+  if (pdfBtnAlt) pdfBtnAlt.addEventListener('click', exportManager.exportToPDF);
+  if (csvBtnAlt) csvBtnAlt.addEventListener('click', exportManager.exportToCSV);
 });
 
 // Global error handler
