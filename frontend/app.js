@@ -859,80 +859,14 @@ const exportManager = {
         throw new Error('No analysis data available to export');
       }
       
-      // Simulate CSV generation delay
-      await new Promise(resolve => setTimeout(resolve, 800));
+      const { address, blockchain, fromDate, toDate } = AppState.currentAnalysis;
       
-      const chain = blockchains[AppState.currentAnalysis.blockchain];
+      ui.showToast('Generating CSV with opening balance...', 'info');
       
-      // Create CSV header
-      const headers = [
-        'Date',
-        'Transaction Hash',
-        'Type',
-        'Direction',
-        'From Address',
-        'To Address',
-        'Amount',
-        'Token Symbol',
-        'USD Value',
-        'Status',
-        'Block Number',
-        'Gas Used',
-        'Gas Price (Gwei)'
-      ];
+      // Call backend to generate CSV with opening balance
+      await apiService.exportCSV(blockchain, address, fromDate, toDate);
       
-      // Create CSV rows
-      const rows = AppState.transactions.map(tx => [
-        `"${utils.formatDate(tx.date)}"`,
-        `"${tx.hash}"`,
-        `"${tx.type}"`,
-        `"${tx.direction}"`,
-        `"${tx.from}"`,
-        `"${tx.to}"`,
-        tx.amount.toString(),
-        `"${tx.tokenSymbol || tx.token}"`,
-        tx.usdValue ? tx.usdValue.toFixed(2) : '0',
-        `"${tx.status}"`,
-        tx.blockNumber || '',
-        tx.gasUsed || '',
-        tx.gasPrice || ''
-      ]);
-      
-      // Add metadata rows at the top
-      const metadata = [
-        ['Blockchain Account Statement'],
-        [''],
-        ['Network', chain.name],
-        ['Address', AppState.currentAnalysis.address],
-        ['Date Range', `${AppState.currentAnalysis.fromDate} to ${AppState.currentAnalysis.toDate}`],
-        ['Generated', new Date().toLocaleString()],
-        ['Total Transactions', AppState.transactions.length.toString()],
-        ['Current Balance', `${AppState.currentAnalysis.stats.currentBalance.toFixed(8)} ${chain.symbol}`],
-        [''],
-        ['Transactions:'],
-        headers
-      ];
-      
-      const csvContent = [
-        ...metadata.map(row => row.join(',')),
-        ...rows.map(row => row.join(','))
-      ].join('\n');
-      
-      // Create and download file
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const link = document.createElement('a');
-      const url = URL.createObjectURL(blob);
-      
-      const filename = `${chain.name}_${AppState.currentAnalysis.address.slice(0, 10)}_transactions.csv`;
-      
-      link.setAttribute('href', url);
-      link.setAttribute('download', filename);
-      link.style.visibility = 'hidden';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      
-      ui.showToast(`✅ CSV exported successfully! (${AppState.transactions.length} transactions)`, 'success');
+      ui.showToast('✅ CSV report with opening balance downloaded successfully!', 'success');
       
     } catch (error) {
       console.error('CSV export error:', error);

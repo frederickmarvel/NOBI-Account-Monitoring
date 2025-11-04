@@ -241,8 +241,10 @@ class BlockchainService:
     
     def get_ethereum_transactions(self, address: str, chain_id: int, start_date: str, end_date: str) -> Dict:
         """
-        Fetch transactions for Ethereum-like chains using Etherscan V2 API
-        Calculates opening balance for native token and ERC-20 tokens
+        NEW APPROACH for EVM chains:
+        1. Fetch ALL transactions (Etherscan returns all by default with startblock=0)
+        2. Calculate opening balance from movements before start_date
+        3. Filter display to transactions in date range
         
         Args:
             address: Wallet address
@@ -266,12 +268,16 @@ class BlockchainService:
         opening_ts = int(opening_datetime.replace(hour=23, minute=59, second=59).timestamp())
         opening_balance_date = opening_datetime.strftime('%Y-%m-%d')
         
-        # Build API URLs
+        logger.info(f"🎯 EVM Chain {chain_id}: Fetching ALL transactions (no block limit)")
+        logger.info(f"📅 Opening balance cutoff: {opening_balance_date}")
+        logger.info(f"📅 Display range: {start_date} to {end_date}")
+        
+        # Build API URLs - startblock=0 gets ALL transactions
         params = {
             'chainid': chain_id,
             'apikey': self.api_key,
             'address': address,
-            'startblock': 0,
+            'startblock': 0,  # Get ALL transactions since wallet creation
             'endblock': 99999999,
             'sort': 'desc'
         }
@@ -303,7 +309,7 @@ class BlockchainService:
         balance_url = f"{base_url}?" + "&".join([f"{k}={v}" for k, v in balance_params.items()])
         balance_data = self.fetch_with_retry(balance_url)
         
-        logger.info(f"Chain {chain_id} responses - Normal: {normal_data.get('status')}, "
+        logger.info(f"📊 Responses - Normal: {normal_data.get('status')}, "
                    f"Internal: {internal_data.get('status')}, Token: {token_data.get('status')}, "
                    f"Balance: {balance_data.get('status')}")
         
@@ -315,21 +321,29 @@ class BlockchainService:
         # Get current token balances
         current_token_balances = self.get_token_balances(address, chain_id)
         
-        # Initialize opening balances
-        opening_balance_wei = current_balance_wei
+        # Initialize opening balances to 0 (will accumulate from transactions)
+        opening_balance_wei = 0
         opening_token_balances = {}
         for symbol, token_data in current_token_balances.items():
             opening_token_balances[symbol] = {
-                'balance': token_data['balance'],
+                'balance': 0,
                 'contract': token_data['contract'],
                 'name': token_data['name'],
                 'decimals': token_data['decimals']
             }
         
-        # Parse transactions and calculate opening balances
-        transactions = []
-        native_txs_reversed = 0
-        token_txs_reversed = 0
+        # Counters
+        display_transactions = []
+        native_movements_before_start = 0
+        token_movements_before_start = 0
+        total_normal_txs = len(normal_data.get('result', [])) if isinstance(normal_data.get('result'), list) else 0
+        total_internal_txs = len(internal_data.get('result', [])) if isinstance(internal_data.get('result'), list) else 0
+        total_token_txs = len(token_data.get('result', [])) if isinstance(token_data.get('result'), list) else 0
+        
+        logger.info(f"📊 Total transactions found:")
+        logger.info(f"   - Normal: {total_normal_txs}")
+        logger.info(f"   - Internal: {total_internal_txs}")
+        logger.info(f"   - Token: {total_token_txs}")
         
         # Parse normal transactions
         if normal_data.get('status') == '1' and isinstance(normal_data.get('result'), list):
@@ -337,12 +351,8 @@ class BlockchainService:
                 tx_timestamp = int(tx.get('timeStamp', 0))
                 parsed_tx = self._parse_normal_tx(tx, address)
                 
-                # Include in transaction list if in date range
-                if start_ts <= tx_timestamp <= end_ts:
-                    transactions.append(parsed_tx)
-                
-                # Reverse for opening balance if after opening date
-                elif tx_timestamp > opening_ts:
+                # Transactions BEFORE or ON opening date contribute to opening balance
+                if tx_timestamp <= opening_ts:
                     value_wei = int(tx.get('value', 0))
                     gas_used = int(tx.get('gasUsed', 0))
                     gas_price = int(tx.get('gasPrice', 0))
@@ -352,33 +362,36 @@ class BlockchainService:
                     is_sender = tx.get('from', '').lower() == address.lower()
                     
                     if is_incoming and value_wei > 0:
-                        # Was incoming, subtract to get opening
-                        opening_balance_wei -= value_wei
-                        native_txs_reversed += 1
+                        # Incoming: add to opening balance
+                        opening_balance_wei += value_wei
+                        native_movements_before_start += 1
                     elif is_sender:
-                        # Was outgoing, add back value + gas
-                        opening_balance_wei += (value_wei + gas_cost)
-                        native_txs_reversed += 1
+                        # Outgoing: subtract value + gas
+                        opening_balance_wei -= (value_wei + gas_cost)
+                        native_movements_before_start += 1
+                
+                # Transactions in display range
+                elif start_ts <= tx_timestamp <= end_ts:
+                    display_transactions.append(parsed_tx)
         
         # Parse internal transactions
         if internal_data.get('status') == '1' and isinstance(internal_data.get('result'), list):
             for tx in internal_data['result']:
                 tx_timestamp = int(tx.get('timeStamp', 0))
                 parsed_tx = self._parse_internal_tx(tx, address)
+                value_wei = int(tx.get('value', 0))
+                is_incoming = tx.get('to', '').lower() == address.lower()
                 
-                if start_ts <= tx_timestamp <= end_ts:
-                    transactions.append(parsed_tx)
-                
-                elif tx_timestamp > opening_ts:
-                    value_wei = int(tx.get('value', 0))
-                    is_incoming = tx.get('to', '').lower() == address.lower()
-                    
+                if tx_timestamp <= opening_ts:
                     if is_incoming and value_wei > 0:
-                        opening_balance_wei -= value_wei
-                        native_txs_reversed += 1
-                    elif value_wei > 0:
                         opening_balance_wei += value_wei
-                        native_txs_reversed += 1
+                        native_movements_before_start += 1
+                    elif value_wei > 0:
+                        opening_balance_wei -= value_wei
+                        native_movements_before_start += 1
+                
+                elif start_ts <= tx_timestamp <= end_ts:
+                    display_transactions.append(parsed_tx)
         
         # Parse token transactions
         if token_data.get('status') == '1' and isinstance(token_data.get('result'), list):
@@ -387,32 +400,34 @@ class BlockchainService:
                 parsed_tx = self._parse_token_tx(tx, address)
                 
                 if parsed_tx:  # Only process whitelisted tokens
-                    if start_ts <= tx_timestamp <= end_ts:
-                        transactions.append(parsed_tx)
+                    token_symbol = parsed_tx.get('tokenSymbol')
+                    amount = float(parsed_tx.get('amount', 0))
+                    direction = parsed_tx.get('direction')
                     
-                    elif tx_timestamp > opening_ts:
-                        # Reverse token transfer for opening balance
-                        token_symbol = parsed_tx.get('tokenSymbol')
+                    if tx_timestamp <= opening_ts:
+                        # Contribute to opening balance
                         if token_symbol and token_symbol in opening_token_balances:
-                            amount = float(parsed_tx.get('amount', 0))
-                            direction = parsed_tx.get('direction')
-                            
                             if direction == 'in':
-                                opening_token_balances[token_symbol]['balance'] -= amount
-                                token_txs_reversed += 1
-                            elif direction == 'out':
                                 opening_token_balances[token_symbol]['balance'] += amount
-                                token_txs_reversed += 1
+                            elif direction == 'out':
+                                opening_token_balances[token_symbol]['balance'] -= amount
+                            token_movements_before_start += 1
+                    
+                    elif start_ts <= tx_timestamp <= end_ts:
+                        display_transactions.append(parsed_tx)
         
         # Sort by timestamp
-        transactions.sort(key=lambda x: x['timestamp'], reverse=True)
+        display_transactions.sort(key=lambda x: x['timestamp'], reverse=True)
         
-        logger.info(f"📊 EVM REVERSAL STATS (Chain {chain_id}):")
-        logger.info(f"   - Native transactions reversed: {native_txs_reversed}")
-        logger.info(f"   - Token transactions reversed: {token_txs_reversed}")
-        logger.info(f"   - Transactions in date range: {len(transactions)}")
+        logger.info(f"📊 CALCULATION COMPLETE:")
+        logger.info(f"   - Native movements before {start_date}: {native_movements_before_start}")
+        logger.info(f"   - Token movements before {start_date}: {token_movements_before_start}")
+        logger.info(f"   - Transactions to display: {len(display_transactions)}")
         logger.info(f"   - Opening balance: {opening_balance_wei / 1e18} (as of {opening_balance_date})")
         logger.info(f"   - Current balance: {current_balance_wei / 1e18}")
+        
+        for symbol, token_info in opening_token_balances.items():
+            logger.info(f"   - Opening {symbol} balance: {token_info['balance']}")
         
         return {
             'success': True,
@@ -421,8 +436,8 @@ class BlockchainService:
             'opening_balance_date': opening_balance_date,
             'token_balances': current_token_balances,
             'opening_token_balances': opening_token_balances,
-            'transactions': transactions,
-            'count': len(transactions)
+            'transactions': display_transactions,
+            'count': len(display_transactions)
         }
     
     def _parse_normal_tx(self, tx: Dict, user_address: str) -> Dict:
@@ -574,8 +589,10 @@ class BlockchainService:
     
     def get_solana_transactions(self, address: str, start_date: str, end_date: str) -> Dict:
         """
-        Fetch Solana transactions using public Solana RPC
-        If start_date is 2025-04-01, will calculate opening balance as of 2025-03-31
+        NEW APPROACH:
+        1. Fetch ALL transactions since wallet creation (no date limit)
+        2. Calculate opening balance by tracking whitelisted assets before start_date
+        3. Filter transaction display to start_date - end_date range only
         """
         try:
             # Use public Solana RPC endpoint (FREE)
@@ -599,7 +616,9 @@ class BlockchainService:
             if 'result' in balance_data and 'value' in balance_data['result']:
                 current_lamports = balance_data['result']['value']
             
-            # Get transaction signatures (fetch more for opening balance calculation)
+            logger.info(f"🎯 STEP 1: FETCHING ALL TRANSACTIONS (no date limit)")
+            
+            # Get ALL transaction signatures (no date filtering - this is KEY!)
             sig_payload = {
                 "jsonrpc": "2.0",
                 "id": 1,
@@ -607,7 +626,7 @@ class BlockchainService:
                 "params": [
                     address,
                     {
-                        "limit": 1000  # Fetch more for better opening balance accuracy
+                        "limit": 1000  # Maximum allowed by Solana RPC
                     }
                 ]
             }
@@ -617,177 +636,153 @@ class BlockchainService:
             sig_response.raise_for_status()
             sig_data = sig_response.json()
             
+            total_sigs = len(sig_data.get('result', []))
+            logger.info(f"📊 Found {total_sigs} total transaction signatures")
+            
             # Convert dates to timestamps
             start_ts = int(datetime.strptime(start_date, '%Y-%m-%d').timestamp())
             end_ts = int(datetime.strptime(end_date, '%Y-%m-%d').timestamp())
             
-            # Calculate opening balance (balance at end of day before start_date)
-            # For example: if start_date is 2025-04-01, opening balance is as of 2025-03-31 23:59:59
-            opening_balance_lamports = current_lamports
-            opening_balance_date = None
-            
-            # Check if we need to calculate opening balance (if start_date > earliest transaction)
+            # Opening balance cutoff (end of day before start_date)
             from datetime import timedelta
             start_datetime = datetime.strptime(start_date, '%Y-%m-%d')
-            opening_datetime = start_datetime - timedelta(days=1)  # Day before start_date
+            opening_datetime = start_datetime - timedelta(days=1)
             opening_ts = int(opening_datetime.replace(hour=23, minute=59, second=59).timestamp())
             opening_balance_date = opening_datetime.strftime('%Y-%m-%d')
             
-            # Get current token balances first
+            logger.info(f"📅 Opening balance cutoff: {opening_balance_date} 23:59:59")
+            logger.info(f"📅 Display range: {start_date} to {end_date}")
+            
+            # Get current token balances
             current_token_balances = self.get_solana_token_balances(address)
             
-            # Initialize opening token balances with current balances
-            opening_token_balances = {}
-            for symbol, token_data in current_token_balances.items():
-                opening_token_balances[symbol] = {
-                    'balance': token_data['balance'],  # Will be adjusted
-                    'contract': token_data['contract'],
-                    'name': token_data['name'],
-                    'decimals': token_data['decimals']
+            # Initialize opening balances
+            opening_balance_lamports = 0
+            opening_token_balances = {
+                symbol: {
+                    'balance': 0,
+                    'contract': data['contract'],
+                    'name': data['name'],
+                    'decimals': data['decimals']
                 }
+                for symbol, data in current_token_balances.items()
+            }
             
-            # Parse transactions and calculate opening balances
-            transactions = []
-            transactions_reversed = 0
-            token_transactions_reversed = 0
+            # Counters for logging
+            all_transactions_processed = 0
+            display_transactions = []
+            sol_movements_before_start = 0
+            token_movements_before_start = 0
+            
+            logger.info(f"🔄 STEP 2: Processing all transactions to calculate opening balance...")
             
             if 'result' in sig_data:
-                logger.info(f"Processing {len(sig_data['result'])} transaction signatures...")
-                
-                for sig_info in sig_data['result']:
+                for idx, sig_info in enumerate(sig_data['result']):
                     tx_time = sig_info.get('blockTime', 0)
                     if not tx_time:
                         continue
                     
-                    # Only fetch details for transactions in our date range
-                    if start_ts <= tx_time <= end_ts:
-                        # Try to get transaction details (may fail for old transactions)
-                        tx_payload = {
-                            "jsonrpc": "2.0",
-                            "id": 1,
-                            "method": "getTransaction",
-                            "params": [
-                                sig_info['signature'],
-                                {
-                                    "encoding": "jsonParsed",
-                                    "maxSupportedTransactionVersion": 0
-                                }
-                            ]
-                        }
-                        
-                        self.rate_limiter.wait_if_needed()
-                        tx_response = requests.post(rpc_url, json=tx_payload, timeout=30)
-                        parsed_tx = None
-                        
-                        if tx_response.status_code == 200:
-                            tx_data = tx_response.json()
-                            if 'result' in tx_data and tx_data['result']:
-                                parsed_tx = self._parse_solana_tx(tx_data['result'], address, sig_info['signature'])
-                        
-                        # Fallback: If no details available, create basic transaction from signature
-                        if not parsed_tx:
-                            parsed_tx = {
-                                'hash': sig_info['signature'],
-                                'timestamp': tx_time,
-                                'date': datetime.fromtimestamp(tx_time).isoformat() if tx_time else 'Unknown',
-                                'type': 'Transaction',
-                                'direction': 'unknown',
-                                'from': 'Unknown',
-                                'to': 'Unknown',
-                                'amount': 0,
-                                'token': None,
-                                'tokenSymbol': None,
-                                'tokenName': None,
-                                'status': 'Failed' if sig_info.get('err') else 'Success',
-                                'gasUsed': 0,
-                                'gasPrice': 0,
-                                'blockNumber': sig_info.get('slot', 0),
-                                'confirmations': 0,
-                                'fee': 0
-                            }
-                        
-                        if parsed_tx:
-                            transactions.append(parsed_tx)
+                    # Progress logging every 100 transactions
+                    if idx % 100 == 0:
+                        logger.info(f"   Processing {idx}/{total_sigs}...")
                     
-                    # For opening balance: reverse transactions that happened AFTER the opening date
-                    elif tx_time > opening_ts:
-                        # Fetch this transaction to reverse it for opening balance
-                        tx_payload = {
-                            "jsonrpc": "2.0",
-                            "id": 1,
-                            "method": "getTransaction",
-                            "params": [
-                                sig_info['signature'],
-                                {
-                                    "encoding": "jsonParsed",
-                                    "maxSupportedTransactionVersion": 0
-                                }
-                            ]
+                    # Fetch transaction details
+                    tx_payload = {
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "method": "getTransaction",
+                        "params": [
+                            sig_info['signature'],
+                            {
+                                "encoding": "jsonParsed",
+                                "maxSupportedTransactionVersion": 0
+                            }
+                        ]
+                    }
+                    
+                    self.rate_limiter.wait_if_needed()
+                    tx_response = requests.post(rpc_url, json=tx_payload, timeout=30)
+                    parsed_tx = None
+                    
+                    if tx_response.status_code == 200:
+                        tx_data = tx_response.json()
+                        if 'result' in tx_data and tx_data['result']:
+                            parsed_tx = self._parse_solana_tx(tx_data['result'], address, sig_info['signature'])
+                    
+                    # Fallback if no details available
+                    if not parsed_tx:
+                        parsed_tx = {
+                            'hash': sig_info['signature'],
+                            'timestamp': tx_time,
+                            'date': datetime.fromtimestamp(tx_time).isoformat(),
+                            'type': 'Transaction',
+                            'direction': 'unknown',
+                            'from': 'Unknown',
+                            'to': 'Unknown',
+                            'amount': 0,
+                            'token': None,
+                            'tokenSymbol': None,
+                            'tokenName': None,
+                            'status': 'Failed' if sig_info.get('err') else 'Success',
+                            'gasUsed': 0,
+                            'gasPrice': 0,
+                            'blockNumber': sig_info.get('slot', 0),
+                            'confirmations': 0,
+                            'fee': 0
                         }
+                    
+                    all_transactions_processed += 1
+                    
+                    # Check if this transaction happened BEFORE start_date
+                    # If so, it contributes to opening balance
+                    if tx_time <= opening_ts:
+                        token_symbol = parsed_tx.get('tokenSymbol')
+                        amount = float(parsed_tx.get('amount', 0))
+                        direction = parsed_tx.get('direction')
+                        fee = parsed_tx.get('fee', 0)
                         
-                        self.rate_limiter.wait_if_needed()
-                        tx_response = requests.post(rpc_url, json=tx_payload, timeout=30)
+                        if token_symbol and token_symbol in opening_token_balances:
+                            # Whitelisted token transaction before start_date
+                            if direction == 'in':
+                                opening_token_balances[token_symbol]['balance'] += amount
+                            elif direction == 'out':
+                                opening_token_balances[token_symbol]['balance'] -= amount
+                            token_movements_before_start += 1
                         
-                        if tx_response.status_code == 200:
-                            tx_data = tx_response.json()
-                            if 'result' in tx_data and tx_data['result']:
-                                parsed_tx = self._parse_solana_tx(tx_data['result'], address, sig_info['signature'])
-                                if parsed_tx:
-                                    # Check if this is a token transfer or SOL transfer
-                                    token_symbol = parsed_tx.get('tokenSymbol')
-                                    
-                                    if token_symbol and token_symbol in opening_token_balances:
-                                        # This is a token transfer - reverse it
-                                        amount = float(parsed_tx.get('amount', 0))
-                                        direction = parsed_tx.get('direction')
-                                        
-                                        if direction == 'in':
-                                            # Was incoming, subtract to get opening balance
-                                            opening_token_balances[token_symbol]['balance'] -= amount
-                                        elif direction == 'out':
-                                            # Was outgoing, add back to get opening balance
-                                            opening_token_balances[token_symbol]['balance'] += amount
-                                        
-                                        token_transactions_reversed += 1
-                                        logger.info(f"✅ Reversed {token_symbol} tx: {direction} {amount}, new opening: {opening_token_balances[token_symbol]['balance']}")
-                                    
-                                    elif not token_symbol:
-                                        # This is a SOL transfer - reverse it for SOL opening balance
-                                        amount_lamports = int(float(parsed_tx.get('amount', 0)) * 1e9)
-                                        fee_lamports = parsed_tx.get('fee', 0)
-                                        
-                                        if parsed_tx.get('direction') == 'in':
-                                            # Was incoming, subtract from current to get opening
-                                            opening_balance_lamports -= amount_lamports
-                                        elif parsed_tx.get('direction') == 'out':
-                                            # Was outgoing, add back (including fee)
-                                            opening_balance_lamports += (amount_lamports + fee_lamports)
-                                        
-                                        transactions_reversed += 1
+                        elif not token_symbol:
+                            # SOL transaction before start_date
+                            amount_lamports = int(amount * 1e9)
+                            if direction == 'in':
+                                opening_balance_lamports += amount_lamports
+                            elif direction == 'out':
+                                opening_balance_lamports -= (amount_lamports + fee)
+                            sol_movements_before_start += 1
+                    
+                    # Check if this transaction should be displayed (in date range)
+                    if start_ts <= tx_time <= end_ts:
+                        display_transactions.append(parsed_tx)
             
-            logger.info(f"📊 REVERSAL STATS:")
-            logger.info(f"   - Total signatures processed: {len(sig_data.get('result', []))}")
-            logger.info(f"   - SOL transactions reversed: {transactions_reversed}")
-            logger.info(f"   - Token transactions reversed: {token_transactions_reversed}")
-            logger.info(f"   - Transactions in date range: {len(transactions)}")
-            
-            logger.info(f"Found {len(transactions)} Solana transactions for {address} (from {start_date} to {end_date})")
-            logger.info(f"Opening balance (as of {opening_balance_date}): {opening_balance_lamports / 1e9} SOL")
-            logger.info(f"Current balance: {current_lamports / 1e9} SOL")
+            logger.info(f"📊 STEP 3: Calculation complete!")
+            logger.info(f"   - Total transactions processed: {all_transactions_processed}")
+            logger.info(f"   - SOL movements before {start_date}: {sol_movements_before_start}")
+            logger.info(f"   - Token movements before {start_date}: {token_movements_before_start}")
+            logger.info(f"   - Transactions to display ({start_date} to {end_date}): {len(display_transactions)}")
+            logger.info(f"   - Opening SOL balance (as of {opening_balance_date}): {opening_balance_lamports / 1e9}")
+            logger.info(f"   - Current SOL balance: {current_lamports / 1e9}")
             
             # Log opening token balances
             for symbol, token_data in opening_token_balances.items():
-                logger.info(f"Opening {symbol} balance: {token_data['balance']}")
+                logger.info(f"   - Opening {symbol} balance: {token_data['balance']}")
             
             return {
                 'success': True,
                 'balance': str(int(current_lamports)),
                 'opening_balance': str(int(opening_balance_lamports)),
                 'opening_balance_date': opening_balance_date,
-                'transactions': transactions,
-                'token_balances': current_token_balances,  # Current token balances
-                'opening_token_balances': opening_token_balances,  # Opening token balances
-                'count': len(transactions)
+                'transactions': display_transactions,  # Only transactions in date range
+                'token_balances': current_token_balances,
+                'opening_token_balances': opening_token_balances,
+                'count': len(display_transactions)
             }
             
         except requests.exceptions.RequestException as e:

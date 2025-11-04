@@ -3,6 +3,7 @@ from flask_cors import CORS
 from blockchain_service import BlockchainService
 from currency_service import CurrencyExchangeService
 from pdf_generator import PDFReportGenerator
+from csv_generator import CSVGenerator
 import os
 from dotenv import load_dotenv
 import logging
@@ -39,6 +40,7 @@ blockchain_service = BlockchainService(
 )
 currency_service = CurrencyExchangeService()
 pdf_generator = PDFReportGenerator()
+csv_generator = CSVGenerator()
 
 CHAIN_IDS = {
     'ethereum': 1,
@@ -409,6 +411,118 @@ def export_pdf(blockchain, address):
         
     except Exception as e:
         logger.error(f"Error generating PDF: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/export-csv', methods=['POST'])
+def export_csv():
+    """
+    Generate CSV export with opening balance and transactions
+    Simple format: Opening Balance at START date + All Transactions
+    """
+    try:
+        data = request.json
+        blockchain = data.get('blockchain', '').lower()
+        address = data.get('address', '')
+        start_date = data.get('startDate', '')
+        end_date = data.get('endDate', '')
+        
+        logger.info(f"CSV export request - Chain: {blockchain}, Address: {address}, Period: {start_date} to {end_date}")
+        
+        if not all([blockchain, address, start_date, end_date]):
+            return jsonify({
+                'success': False,
+                'error': 'Missing required fields'
+            }), 400
+        
+        # Get crypto symbol
+        if blockchain == 'bitcoin':
+            data = blockchain_service.get_bitcoin_transactions(address, start_date, end_date)
+            crypto_symbol = 'BTC'
+        elif blockchain == 'solana':
+            data = blockchain_service.get_solana_transactions(address, start_date, end_date)
+            crypto_symbol = 'SOL'
+        elif blockchain == 'tron':
+            data = blockchain_service.get_tron_transactions(address, start_date, end_date)
+            crypto_symbol = 'TRX'
+        elif blockchain == 'cardano':
+            data = blockchain_service.get_cardano_transactions(address, start_date, end_date)
+            crypto_symbol = 'ADA'
+        elif blockchain in CHAIN_IDS:
+            chain_id = CHAIN_IDS[blockchain]
+            data = blockchain_service.get_ethereum_transactions(address, chain_id, start_date, end_date)
+            
+            symbol_map = {
+                'ethereum': 'ETH', 'polygon': 'POL', 'bsc': 'BNB',
+                'arbitrum': 'ETH', 'optimism': 'ETH', 'avalanche': 'AVAX',
+                'base': 'ETH', 'blast': 'ETH', 'linea': 'ETH',
+                'scroll': 'ETH', 'zksync': 'ETH'
+            }
+            crypto_symbol = symbol_map.get(blockchain, 'ETH')
+        else:
+            return jsonify({
+                'success': False,
+                'error': f'Unsupported blockchain: {blockchain}'
+            }), 400
+        
+        if not data.get('success'):
+            return jsonify(data), 500
+        
+        # Convert balances
+        balance_raw = float(data.get('balance', 0))
+        opening_balance_raw = data.get('opening_balance')
+        
+        if blockchain == 'bitcoin':
+            current_balance = balance_raw / 1e8
+            opening_balance = float(opening_balance_raw) / 1e8 if opening_balance_raw else current_balance
+        elif blockchain == 'solana':
+            current_balance = balance_raw / 1e9
+            opening_balance = float(opening_balance_raw) / 1e9 if opening_balance_raw else current_balance
+        elif blockchain == 'tron':
+            current_balance = balance_raw / 1e6
+            opening_balance = float(opening_balance_raw) / 1e6 if opening_balance_raw else current_balance
+        elif blockchain == 'cardano':
+            current_balance = balance_raw / 1e6
+            opening_balance = float(opening_balance_raw) / 1e6 if opening_balance_raw else current_balance
+        elif blockchain in CHAIN_IDS:
+            current_balance = balance_raw / 1e18
+            opening_balance = float(opening_balance_raw) / 1e18 if opening_balance_raw else current_balance
+        else:
+            current_balance = balance_raw
+            opening_balance = float(opening_balance_raw) if opening_balance_raw else current_balance
+        
+        # Generate CSV
+        csv_content = csv_generator.generate_transaction_csv(
+            address=address,
+            blockchain=blockchain,
+            transactions=data.get('transactions', []),
+            opening_balance=opening_balance,
+            current_balance=current_balance,
+            crypto_symbol=crypto_symbol,
+            opening_token_balances=data.get('opening_token_balances'),
+            current_token_balances=data.get('token_balances'),
+            start_date=start_date,
+            end_date=end_date
+        )
+        
+        # Create file buffer
+        csv_buffer = io.BytesIO(csv_content.encode('utf-8'))
+        csv_buffer.seek(0)
+        
+        filename = f"{blockchain}_{address[:8]}_transactions_{start_date}_to_{end_date}.csv"
+        
+        return send_file(
+            csv_buffer,
+            mimetype='text/csv',
+            as_attachment=True,
+            download_name=filename
+        )
+        
+    except Exception as e:
+        logger.error(f"Error generating CSV: {str(e)}")
         return jsonify({
             'success': False,
             'error': str(e)

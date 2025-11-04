@@ -174,10 +174,19 @@
                 <div class="transactions-section">
                     <div class="transactions-header">
                         <h2 class="section-title">Transaction History</h2>
-                        <div class="transaction-filters">
-                            <select id="type-filter" class="form-control filter-select">
-                                <option value="">All Types</option>
-                                <option value="Transfer">Transfer</option>
+                        <div class="export-buttons">
+                            <button type="button" class="btn btn--success" id="export-csv-btn">
+                                📊 Download CSV
+                            </button>
+                            <button type="button" class="btn btn--primary" id="export-pdf-btn">
+                                📄 Download PDF
+                            </button>
+                        </div>
+                    </div>
+                    <div class="transaction-filters">
+                        <select id="type-filter" class="form-control filter-select">
+                            <option value="">All Types</option>
+                            <option value="Transfer">Transfer</option>
                                 <option value="Swap">Swap</option>
                                 <option value="Deposit">Deposit</option>
                                 <option value="Withdrawal">Withdrawal</option>

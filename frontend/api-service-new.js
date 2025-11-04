@@ -115,6 +115,54 @@ class BlockchainAPIService {
     }
   }
 
+  // Export CSV with opening balance
+  async exportCSV(blockchain, address, startDate, endDate) {
+    const endpoint = `${this.backendUrl}/export-csv`;
+    
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          blockchain,
+          address,
+          startDate,
+          endDate
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Failed to generate CSV: ${response.statusText}`);
+      }
+      
+      // Get filename from Content-Disposition header
+      const contentDisposition = response.headers.get('Content-Disposition');
+      let filename = 'transactions.csv';
+      if (contentDisposition) {
+        const match = contentDisposition.match(/filename="?(.+)"?/);
+        if (match) filename = match[1];
+      }
+      
+      // Download the file
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      
+      return { success: true, filename };
+    } catch (error) {
+      console.error('CSV export error:', error);
+      throw error;
+    }
+  }
+
   // Health check
   async healthCheck() {
     try {
