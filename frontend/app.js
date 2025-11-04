@@ -806,6 +806,8 @@ const balanceEditor = {
     const openingNative = parseFloat(document.getElementById('edit-opening-native').value) || 0;
     const currentNative = parseFloat(document.getElementById('edit-current-native').value) || 0;
     
+    console.log('📝 Applying manual edits:', { openingNative, currentNative });
+    
     // Get opening tokens
     const openingTokens = [];
     document.querySelectorAll('#opening-tokens-editor .token-editor-item').forEach(item => {
@@ -836,6 +838,8 @@ const balanceEditor = {
       native: currentNative,
       tokens: currentTokens
     };
+    
+    console.log('✅ Manual edits stored:', balanceEditor.manualEdits);
     
     ui.showToast('✅ Balance changes applied! These values will be used in exports.', 'success');
   },
@@ -968,13 +972,16 @@ const balanceEditor = {
   },
 
   getEditedData: () => {
-    return {
+    const editedData = {
       openingBalance: balanceEditor.manualEdits.openingBalance,
       currentBalance: balanceEditor.manualEdits.currentBalance,
       transactions: AppState.filteredTransactions.filter(tx => 
         !balanceEditor.manualEdits.deletedTransactions.has(tx.hash)
       )
     };
+    
+    console.log('🔍 getEditedData called:', editedData);
+    return editedData;
   }
 };
 

@@ -99,82 +99,11 @@ class PDFReportGenerator:
         elements.append(account_info)
         elements.append(Spacer(1, 0.2*inch))
         
-        # Opening Balance (if provided)
-        if opening_balance is not None and opening_balance_date:
-            opening_heading = Paragraph(f"Opening Balance (as of {opening_balance_date})", self.styles['CustomHeading'])
-            elements.append(opening_heading)
-            elements.append(Spacer(1, 0.1*inch))
-            
-            # Calculate opening values
-            opening_value_usd = opening_balance * prices['usd']
-            opening_value_aed = opening_value_usd * usd_to_aed_rate
-            
-            # Calculate total opening value including tokens
-            total_opening_usd = opening_value_usd
-            if opening_token_balances:
-                for token_info in opening_token_balances.values():
-                    total_opening_usd += token_info['value_usd']
-            
-            # Create opening balance table
-            opening_data = [
-                ['Asset', 'Balance', 'USD Value', 'AED Value', '% of Portfolio']
-            ]
-            
-            # Add SOL/native token
-            sol_percentage = (opening_value_usd / total_opening_usd * 100) if total_opening_usd > 0 else 0
-            opening_data.append([
-                crypto_symbol,
-                f"{opening_balance:.6f}",
-                f"${opening_value_usd:,.2f}",
-                f"AED {opening_value_aed:,.2f}",
-                f"{sol_percentage:.1f}%"
-            ])
-            
-            # Add tokens sorted by USD value
-            if opening_token_balances:
-                sorted_tokens = sorted(
-                    opening_token_balances.items(),
-                    key=lambda x: x[1]['value_usd'],
-                    reverse=True
-                )
-                
-                for token_symbol, token_info in sorted_tokens:
-                    token_percentage = (token_info['value_usd'] / total_opening_usd * 100) if total_opening_usd > 0 else 0
-                    opening_data.append([
-                        f"{token_symbol}",
-                        f"{token_info['balance']:.6f}",
-                        f"${token_info['value_usd']:,.2f}",
-                        f"AED {token_info['value_aed']:,.2f}",
-                        f"{token_percentage:.1f}%"
-                    ])
-            
-            # Add separator and total
-            opening_data.append(['', '', '', '', ''])
-            total_opening_aed = total_opening_usd * usd_to_aed_rate
-            opening_data.append([
-                'TOTAL OPENING VALUE',
-                '',
-                f"${total_opening_usd:,.2f}",
-                f"AED {total_opening_aed:,.2f}",
-                '100%'
-            ])
-            
-            opening_table = Table(opening_data, colWidths=[1.5*inch, 1.3*inch, 1.3*inch, 1.3*inch, 1*inch])
-            opening_table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#34495e')),
-                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, 0), (-1, 0), 10),
-                ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
-                ('BACKGROUND', (0, 1), (-1, -3), colors.white),
-                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-                ('FONTNAME', (0, -2), (-1, -1), 'Helvetica-Bold'),
-                ('BACKGROUND', (0, -2), (-1, -1), colors.HexColor('#ecf0f1')),
-            ]))
-            
-            elements.append(opening_table)
-            elements.append(Spacer(1, 0.3*inch))
+        # Opening Balance section removed - only showing current portfolio
+        # if opening_balance is not None and opening_balance_date:
+        #     opening_heading = Paragraph(f"Opening Balance (as of {opening_balance_date})", self.styles['CustomHeading'])
+        #     elements.append(opening_heading)
+        #     ... (code commented out)
         
         # Current Portfolio Holdings (Native + Tokens in one table)
         portfolio_heading = Paragraph("Current Portfolio Holdings", self.styles['CustomHeading'])

@@ -88,18 +88,27 @@ class BlockchainAPIService {
       };
       
       // If manual data is provided, use POST instead to send the data
-      if (manualData && (manualData.openingBalance || manualData.currentBalance || manualData.transactions)) {
-        options.method = 'POST';
-        options.headers = {
-          'Content-Type': 'application/json'
-        };
-        options.body = JSON.stringify({
-          manualData: {
-            openingBalance: manualData.openingBalance,
-            currentBalance: manualData.currentBalance,
-            transactions: manualData.transactions
-          }
-        });
+      if (manualData) {
+        const hasManualData = manualData.openingBalance !== null || 
+                              manualData.currentBalance !== null || 
+                              (manualData.transactions && manualData.transactions.length > 0);
+        
+        if (hasManualData) {
+          console.log('📝 Sending manual data to backend:', manualData);
+          options.method = 'POST';
+          options.headers = {
+            'Content-Type': 'application/json'
+          };
+          options.body = JSON.stringify({
+            manualData: {
+              openingBalance: manualData.openingBalance,
+              currentBalance: manualData.currentBalance,
+              transactions: manualData.transactions
+            }
+          });
+        } else {
+          console.log('No manual edits detected, using GET');
+        }
       }
       
       const response = await fetch(endpoint, options);
@@ -147,12 +156,21 @@ class BlockchainAPIService {
       };
       
       // Add manual data if provided
-      if (manualData && (manualData.openingBalance || manualData.currentBalance || manualData.transactions)) {
-        requestBody.manualData = {
-          openingBalance: manualData.openingBalance,
-          currentBalance: manualData.currentBalance,
-          transactions: manualData.transactions
-        };
+      if (manualData) {
+        const hasManualData = manualData.openingBalance !== null || 
+                              manualData.currentBalance !== null || 
+                              (manualData.transactions && manualData.transactions.length > 0);
+        
+        if (hasManualData) {
+          console.log('📝 Sending manual data to CSV backend:', manualData);
+          requestBody.manualData = {
+            openingBalance: manualData.openingBalance,
+            currentBalance: manualData.currentBalance,
+            transactions: manualData.transactions
+          };
+        } else {
+          console.log('No manual edits for CSV, using API data');
+        }
       }
       
       const response = await fetch(endpoint, {
