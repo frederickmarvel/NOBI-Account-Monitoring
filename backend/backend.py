@@ -218,11 +218,18 @@ def analyze_address(blockchain, address):
         }), 500
 
 
-@app.route('/api/export/pdf/<blockchain>/<address>', methods=['GET'])
+@app.route('/api/export/pdf/<blockchain>/<address>', methods=['GET', 'POST'])
 def export_pdf(blockchain, address):
     try:
         start_date = request.args.get('start_date', '2020-01-01')
         end_date = request.args.get('end_date', '2025-12-31')
+        
+        # Check for manual data (from POST request)
+        manual_data = None
+        if request.method == 'POST' and request.is_json:
+            manual_data = request.json.get('manualData')
+            if manual_data:
+                logger.info(f"📝 Using manual data overrides for PDF export")
         
         logger.info(f"Generating PDF for {blockchain} address {address}")
         
@@ -288,7 +295,27 @@ def export_pdf(blockchain, address):
             balance = balance_raw
             opening_balance = float(opening_balance_raw) if opening_balance_raw else None
         
+        # Override with manual data if provided
+        if manual_data:
+            if manual_data.get('currentBalance'):
+                manual_current = manual_data['currentBalance']
+                if manual_current.get('native') is not None:
+                    balance = float(manual_current['native'])
+                    logger.info(f"✏️ Using manual current balance: {balance}")
+            
+            if manual_data.get('openingBalance'):
+                manual_opening = manual_data['openingBalance']
+                if manual_opening.get('native') is not None:
+                    opening_balance = float(manual_opening['native'])
+                    logger.info(f"✏️ Using manual opening balance: {opening_balance}")
+        
         transactions = data.get('transactions', [])
+        
+        # Override transactions if manual data provided
+        if manual_data and manual_data.get('transactions'):
+            transactions = manual_data['transactions']
+            logger.info(f"✏️ Using manual transactions: {len(transactions)} transactions")
+        
         if transactions:
             print(f"DEBUG BACKEND: First 3 transaction amounts: {[tx.get('amount', 'N/A') for tx in transactions[:3]]}")
             print(f"DEBUG BACKEND: Balance raw: {balance_raw}, Balance converted: {balance}")
@@ -430,6 +457,11 @@ def export_csv():
         start_date = data.get('startDate', '')
         end_date = data.get('endDate', '')
         
+        # Check for manual data
+        manual_data = data.get('manualData')
+        if manual_data:
+            logger.info(f"📝 Using manual data overrides for CSV export")
+        
         logger.info(f"CSV export request - Chain: {blockchain}, Address: {address}, Period: {start_date} to {end_date}")
         
         if not all([blockchain, address, start_date, end_date]):
@@ -494,11 +526,31 @@ def export_csv():
             current_balance = balance_raw
             opening_balance = float(opening_balance_raw) if opening_balance_raw else current_balance
         
+        # Override with manual data if provided
+        transactions = data.get('transactions', [])
+        
+        if manual_data:
+            if manual_data.get('currentBalance'):
+                manual_current = manual_data['currentBalance']
+                if manual_current.get('native') is not None:
+                    current_balance = float(manual_current['native'])
+                    logger.info(f"✏️ Using manual current balance: {current_balance}")
+            
+            if manual_data.get('openingBalance'):
+                manual_opening = manual_data['openingBalance']
+                if manual_opening.get('native') is not None:
+                    opening_balance = float(manual_opening['native'])
+                    logger.info(f"✏️ Using manual opening balance: {opening_balance}")
+            
+            if manual_data.get('transactions'):
+                transactions = manual_data['transactions']
+                logger.info(f"✏️ Using manual transactions: {len(transactions)} transactions")
+        
         # Generate CSV
         csv_content = csv_generator.generate_transaction_csv(
             address=address,
             blockchain=blockchain,
-            transactions=data.get('transactions', []),
+            transactions=transactions,  # Use the transactions variable (might be manual override)
             opening_balance=opening_balance,
             current_balance=current_balance,
             crypto_symbol=crypto_symbol,
