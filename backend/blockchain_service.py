@@ -743,11 +743,17 @@ class BlockchainService:
                         
                         if token_symbol and token_symbol in opening_token_balances:
                             # Whitelisted token transaction before start_date
+                            old_balance = opening_token_balances[token_symbol]['balance']
                             if direction == 'in':
                                 opening_token_balances[token_symbol]['balance'] += amount
                             elif direction == 'out':
                                 opening_token_balances[token_symbol]['balance'] -= amount
+                            new_balance = opening_token_balances[token_symbol]['balance']
                             token_movements_before_start += 1
+                            
+                            # Log first few token movements for debugging
+                            if token_movements_before_start <= 5:
+                                logger.info(f"      Token movement #{token_movements_before_start}: {token_symbol} {direction} {amount}, balance: {old_balance} → {new_balance}")
                         
                         elif not token_symbol:
                             # SOL transaction before start_date
@@ -755,7 +761,7 @@ class BlockchainService:
                             if direction == 'in':
                                 opening_balance_lamports += amount_lamports
                             elif direction == 'out':
-                                opening_balance_lamports -= (amount_lamports + fee)
+                                opening_balance_lamports -= (amount_lamports + int(fee * 1e9))
                             sol_movements_before_start += 1
                     
                     # Check if this transaction should be displayed (in date range)
@@ -881,7 +887,7 @@ class BlockchainService:
             return {}
     
     def _parse_solana_tx(self, tx: Dict, user_address: str, signature: str) -> Dict:
-        """Parse Solana transaction from RPC response"""
+        """Parse Solana transaction from RPC response - Enhanced token detection"""
         try:
             meta = tx.get('meta', {})
             transaction = tx.get('transaction', {})
@@ -895,71 +901,155 @@ class BlockchainService:
             if not account_keys:
                 return None
             
-            # Check for SPL token transfers in parsed instructions
+            # Check for SPL token transfers in BOTH instructions and innerInstructions
             token_transfer = None
             token_info = None
-            instructions = message.get('instructions', [])
             
+            # Function to check instruction for token transfer
+            def check_instruction_for_token(instruction):
+                if not isinstance(instruction, dict):
+                    return None, None
+                
+                parsed = instruction.get('parsed', {})
+                if not isinstance(parsed, dict):
+                    return None, None
+                
+                instruction_type = parsed.get('type', '')
+                
+                # Check for SPL token transfer types
+                if instruction_type in ['transfer', 'transferChecked']:
+                    info = parsed.get('info', {})
+                    mint = info.get('mint', '').lower() if info.get('mint') else None
+                    
+                    # For 'transfer' type without mint, we need to get token account info
+                    if not mint and instruction_type == 'transfer':
+                        # This is a SPL token transfer but we need to identify the token
+                        # Check preTokenBalances and postTokenBalances in meta
+                        return 'token_transfer_no_mint', info
+                    
+                    # Check if token is whitelisted
+                    if mint and mint in self.WHITELISTED_SOLANA_TOKENS:
+                        token_data = self.WHITELISTED_SOLANA_TOKENS[mint]
+                        transfer_info = {
+                            'mint': mint,
+                            'source': info.get('source', ''),
+                            'destination': info.get('destination', ''),
+                            'amount': info.get('amount', '0'),
+                            'tokenAmount': info.get('tokenAmount', {}),
+                            'authority': info.get('authority', '')
+                        }
+                        return transfer_info, token_data
+                
+                return None, None
+            
+            # Check regular instructions
+            instructions = message.get('instructions', [])
             for instruction in instructions:
-                if isinstance(instruction, dict):
-                    parsed = instruction.get('parsed', {})
-                    if isinstance(parsed, dict):
-                        instruction_type = parsed.get('type', '')
-                        
-                        # Check for SPL token transfer
-                        if instruction_type in ['transfer', 'transferChecked']:
-                            info = parsed.get('info', {})
-                            mint = info.get('mint', '').lower()
-                            
-                            # Check if token is whitelisted
-                            if mint in self.WHITELISTED_SOLANA_TOKENS:
-                                token_info = self.WHITELISTED_SOLANA_TOKENS[mint]
-                                token_transfer = {
-                                    'mint': mint,
-                                    'source': info.get('source', ''),
-                                    'destination': info.get('destination', ''),
-                                    'amount': info.get('amount', '0'),
-                                    'tokenAmount': info.get('tokenAmount', {}),
-                                    'authority': info.get('authority', '')
-                                }
+                token_transfer, token_info = check_instruction_for_token(instruction)
+                if token_transfer and token_info:
+                    break
+            
+            # If not found, check innerInstructions (this is important!)
+            if not token_transfer or not token_info:
+                inner_instructions = meta.get('innerInstructions', [])
+                for inner_group in inner_instructions:
+                    if isinstance(inner_group, dict):
+                        inner_instrs = inner_group.get('instructions', [])
+                        for instruction in inner_instrs:
+                            token_transfer, token_info = check_instruction_for_token(instruction)
+                            if token_transfer and token_info:
                                 break
+                        if token_transfer and token_info:
+                            break
+            
+            # Alternative: Check token balance changes in meta
+            if not token_transfer or not token_info:
+                pre_token_balances = meta.get('preTokenBalances', [])
+                post_token_balances = meta.get('postTokenBalances', [])
+                
+                # Find token balance changes
+                for post_bal in post_token_balances:
+                    mint = post_bal.get('mint', '').lower()
+                    if mint in self.WHITELISTED_SOLANA_TOKENS:
+                        account_index = post_bal.get('accountIndex', -1)
+                        
+                        # Find corresponding pre balance
+                        pre_amount = 0
+                        for pre_bal in pre_token_balances:
+                            if pre_bal.get('accountIndex') == account_index:
+                                pre_amount = float(pre_bal.get('uiTokenAmount', {}).get('uiAmount', 0))
+                                break
+                        
+                        post_amount = float(post_bal.get('uiTokenAmount', {}).get('uiAmount', 0))
+                        
+                        # If there's a change, this is a token transfer
+                        if pre_amount != post_amount:
+                            token_info = self.WHITELISTED_SOLANA_TOKENS[mint]
+                            amount = abs(post_amount - pre_amount)
+                            is_incoming = post_amount > pre_amount
+                            
+                            # Get account owner info
+                            owner = post_bal.get('owner', '')
+                            
+                            token_transfer = {
+                                'mint': mint,
+                                'amount': amount,
+                                'is_incoming': is_incoming,
+                                'owner': owner,
+                                'tokenAmount': post_bal.get('uiTokenAmount', {})
+                            }
+                            break
             
             # If this is a whitelisted SPL token transfer
             if token_transfer and token_info:
                 # Get amount with proper decimals
-                token_amount_info = token_transfer.get('tokenAmount', {})
-                if token_amount_info:
-                    amount = float(token_amount_info.get('uiAmount', 0))
+                if isinstance(token_transfer, str):  # Special case: 'token_transfer_no_mint'
+                    # Fall through to SOL transfer logic
+                    pass
                 else:
-                    # Fallback: use raw amount and decimals
-                    raw_amount = int(token_transfer.get('amount', 0))
-                    decimals = token_info.get('decimals', 6)
-                    amount = raw_amount / (10 ** decimals)
-                
-                # Determine direction
-                destination = token_transfer.get('destination', '')
-                source = token_transfer.get('source', '')
-                is_incoming = destination.lower() == user_address.lower()
-                
-                return {
-                    'hash': signature,
-                    'timestamp': block_time,
-                    'date': datetime.fromtimestamp(block_time).isoformat() if block_time else 'Unknown',
-                    'type': 'Token Transfer',
-                    'direction': 'in' if is_incoming else 'out',
-                    'from': source,
-                    'to': destination,
-                    'amount': amount,
-                    'token': token_info['symbol'],
-                    'tokenSymbol': token_info['symbol'],
-                    'tokenName': token_info['name'],
-                    'status': 'Failed' if meta.get('err') else 'Success',
-                    'gasUsed': 0,
-                    'gasPrice': 0,
-                    'blockNumber': tx.get('slot', 0),
-                    'confirmations': 0,
-                    'fee': meta.get('fee', 0) / 1e9
-                }
+                    token_amount_info = token_transfer.get('tokenAmount', {})
+                    if token_amount_info and 'uiAmount' in token_amount_info:
+                        amount = float(token_amount_info.get('uiAmount', 0))
+                    elif 'amount' in token_transfer and isinstance(token_transfer['amount'], (int, float)):
+                        amount = token_transfer['amount']
+                    else:
+                        # Fallback: use raw amount and decimals
+                        raw_amount = int(token_transfer.get('amount', 0))
+                        decimals = token_info.get('decimals', 6)
+                        amount = raw_amount / (10 ** decimals)
+                    
+                    # Determine direction
+                    if 'is_incoming' in token_transfer:
+                        is_incoming = token_transfer['is_incoming']
+                        # For balance change detection
+                        source = 'Unknown'
+                        destination = token_transfer.get('owner', user_address)
+                    else:
+                        destination = token_transfer.get('destination', '')
+                        source = token_transfer.get('source', '')
+                        is_incoming = destination.lower() == user_address.lower()
+                    
+                    logger.info(f"✅ Found {token_info['symbol']} transfer: {amount} ({('in' if is_incoming else 'out')})")
+                    
+                    return {
+                        'hash': signature,
+                        'timestamp': block_time,
+                        'date': datetime.fromtimestamp(block_time).isoformat() if block_time else 'Unknown',
+                        'type': 'Token Transfer',
+                        'direction': 'in' if is_incoming else 'out',
+                        'from': source,
+                        'to': destination,
+                        'amount': amount,
+                        'token': token_info['symbol'],
+                        'tokenSymbol': token_info['symbol'],
+                        'tokenName': token_info['name'],
+                        'status': 'Failed' if meta.get('err') else 'Success',
+                        'gasUsed': 0,
+                        'gasPrice': 0,
+                        'blockNumber': tx.get('slot', 0),
+                        'confirmations': 0,
+                        'fee': meta.get('fee', 0) / 1e9
+                    }
             
             # Otherwise, parse as SOL transfer
             # Get pre and post balances
