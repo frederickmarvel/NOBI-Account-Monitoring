@@ -242,6 +242,7 @@ class BlockchainService:
     def get_ethereum_transactions(self, address: str, chain_id: int, start_date: str, end_date: str) -> Dict:
         """
         Fetch transactions for Ethereum-like chains using Etherscan V2 API
+        Calculates opening balance for native token and ERC-20 tokens
         
         Args:
             address: Wallet address
@@ -250,13 +251,20 @@ class BlockchainService:
             end_date: End date in YYYY-MM-DD format
         
         Returns:
-            Dict with balance and transactions
+            Dict with balance, opening_balance, and transactions
         """
         base_url = "https://api.etherscan.io/v2/api"
         
         # Convert dates to timestamps
         start_ts = int(datetime.strptime(start_date, '%Y-%m-%d').timestamp())
         end_ts = int(datetime.strptime(end_date, '%Y-%m-%d').timestamp())
+        
+        # Calculate opening timestamp (day before start_date)
+        from datetime import timedelta
+        start_datetime = datetime.strptime(start_date, '%Y-%m-%d')
+        opening_datetime = start_datetime - timedelta(days=1)
+        opening_ts = int(opening_datetime.replace(hour=23, minute=59, second=59).timestamp())
+        opening_balance_date = opening_datetime.strftime('%Y-%m-%d')
         
         # Build API URLs
         params = {
@@ -299,44 +307,120 @@ class BlockchainService:
                    f"Internal: {internal_data.get('status')}, Token: {token_data.get('status')}, "
                    f"Balance: {balance_data.get('status')}")
         
-        # Parse transactions
+        # Get current native balance
+        current_balance_wei = 0
+        if balance_data.get('status') == '1':
+            current_balance_wei = int(balance_data.get('result', '0'))
+        
+        # Get current token balances
+        current_token_balances = self.get_token_balances(address, chain_id)
+        
+        # Initialize opening balances
+        opening_balance_wei = current_balance_wei
+        opening_token_balances = {}
+        for symbol, token_data in current_token_balances.items():
+            opening_token_balances[symbol] = {
+                'balance': token_data['balance'],
+                'contract': token_data['contract'],
+                'name': token_data['name'],
+                'decimals': token_data['decimals']
+            }
+        
+        # Parse transactions and calculate opening balances
         transactions = []
+        native_txs_reversed = 0
+        token_txs_reversed = 0
         
         # Parse normal transactions
         if normal_data.get('status') == '1' and isinstance(normal_data.get('result'), list):
             for tx in normal_data['result']:
-                if start_ts <= int(tx.get('timeStamp', 0)) <= end_ts:
-                    transactions.append(self._parse_normal_tx(tx, address))
+                tx_timestamp = int(tx.get('timeStamp', 0))
+                parsed_tx = self._parse_normal_tx(tx, address)
+                
+                # Include in transaction list if in date range
+                if start_ts <= tx_timestamp <= end_ts:
+                    transactions.append(parsed_tx)
+                
+                # Reverse for opening balance if after opening date
+                elif tx_timestamp > opening_ts:
+                    value_wei = int(tx.get('value', 0))
+                    gas_used = int(tx.get('gasUsed', 0))
+                    gas_price = int(tx.get('gasPrice', 0))
+                    gas_cost = gas_used * gas_price
+                    
+                    is_incoming = tx.get('to', '').lower() == address.lower()
+                    is_sender = tx.get('from', '').lower() == address.lower()
+                    
+                    if is_incoming and value_wei > 0:
+                        # Was incoming, subtract to get opening
+                        opening_balance_wei -= value_wei
+                        native_txs_reversed += 1
+                    elif is_sender:
+                        # Was outgoing, add back value + gas
+                        opening_balance_wei += (value_wei + gas_cost)
+                        native_txs_reversed += 1
         
         # Parse internal transactions
         if internal_data.get('status') == '1' and isinstance(internal_data.get('result'), list):
             for tx in internal_data['result']:
-                if start_ts <= int(tx.get('timeStamp', 0)) <= end_ts:
-                    transactions.append(self._parse_internal_tx(tx, address))
+                tx_timestamp = int(tx.get('timeStamp', 0))
+                parsed_tx = self._parse_internal_tx(tx, address)
+                
+                if start_ts <= tx_timestamp <= end_ts:
+                    transactions.append(parsed_tx)
+                
+                elif tx_timestamp > opening_ts:
+                    value_wei = int(tx.get('value', 0))
+                    is_incoming = tx.get('to', '').lower() == address.lower()
+                    
+                    if is_incoming and value_wei > 0:
+                        opening_balance_wei -= value_wei
+                        native_txs_reversed += 1
+                    elif value_wei > 0:
+                        opening_balance_wei += value_wei
+                        native_txs_reversed += 1
         
-        # Parse token transactions (filter out non-whitelisted tokens)
+        # Parse token transactions
         if token_data.get('status') == '1' and isinstance(token_data.get('result'), list):
             for tx in token_data['result']:
-                if start_ts <= int(tx.get('timeStamp', 0)) <= end_ts:
-                    parsed_tx = self._parse_token_tx(tx, address)
-                    if parsed_tx:  # Only add if token is whitelisted
+                tx_timestamp = int(tx.get('timeStamp', 0))
+                parsed_tx = self._parse_token_tx(tx, address)
+                
+                if parsed_tx:  # Only process whitelisted tokens
+                    if start_ts <= tx_timestamp <= end_ts:
                         transactions.append(parsed_tx)
+                    
+                    elif tx_timestamp > opening_ts:
+                        # Reverse token transfer for opening balance
+                        token_symbol = parsed_tx.get('tokenSymbol')
+                        if token_symbol and token_symbol in opening_token_balances:
+                            amount = float(parsed_tx.get('amount', 0))
+                            direction = parsed_tx.get('direction')
+                            
+                            if direction == 'in':
+                                opening_token_balances[token_symbol]['balance'] -= amount
+                                token_txs_reversed += 1
+                            elif direction == 'out':
+                                opening_token_balances[token_symbol]['balance'] += amount
+                                token_txs_reversed += 1
         
         # Sort by timestamp
         transactions.sort(key=lambda x: x['timestamp'], reverse=True)
         
-        # Get native balance
-        balance = '0'
-        if balance_data.get('status') == '1':
-            balance = balance_data.get('result', '0')
-        
-        # Get token balances (USDT, USDC, WBTC, WETH)
-        token_balances = self.get_token_balances(address, chain_id)
+        logger.info(f"📊 EVM REVERSAL STATS (Chain {chain_id}):")
+        logger.info(f"   - Native transactions reversed: {native_txs_reversed}")
+        logger.info(f"   - Token transactions reversed: {token_txs_reversed}")
+        logger.info(f"   - Transactions in date range: {len(transactions)}")
+        logger.info(f"   - Opening balance: {opening_balance_wei / 1e18} (as of {opening_balance_date})")
+        logger.info(f"   - Current balance: {current_balance_wei / 1e18}")
         
         return {
             'success': True,
-            'balance': balance,
-            'token_balances': token_balances,
+            'balance': str(current_balance_wei),
+            'opening_balance': str(opening_balance_wei),
+            'opening_balance_date': opening_balance_date,
+            'token_balances': current_token_balances,
+            'opening_token_balances': opening_token_balances,
             'transactions': transactions,
             'count': len(transactions)
         }
