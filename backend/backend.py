@@ -297,10 +297,19 @@ def export_pdf(blockchain, address):
         token_balances_with_prices = {}
         token_balances = data.get('token_balances', {})
         
+        # Get opening token balances (for Solana)
+        opening_token_balances = data.get('opening_token_balances', {})
+        opening_token_balances_with_prices = {}
+        
         # CRITICAL DEBUG: Log what we received from blockchain service
         logger.info(f"🔍 DEBUG: Received {len(token_balances)} tokens from blockchain_service")
         for sym, info in token_balances.items():
             logger.info(f"   → {sym}: balance={info.get('balance', 0)}, contract={info.get('contract', 'N/A')[:20]}...")
+        
+        if opening_token_balances:
+            logger.info(f"🔍 DEBUG: Received {len(opening_token_balances)} opening token balances")
+            for sym, info in opening_token_balances.items():
+                logger.info(f"   → Opening {sym}: balance={info.get('balance', 0)}")
         
         # Collect all unique token symbols from transactions for price fetching
         transaction_token_symbols = set()
@@ -310,7 +319,7 @@ def export_pdf(blockchain, address):
                 transaction_token_symbols.add(token_symbol)
         
         # Combine token symbols from balances and transactions
-        all_token_symbols = set(token_balances.keys()) | transaction_token_symbols
+        all_token_symbols = set(token_balances.keys()) | transaction_token_symbols | set(opening_token_balances.keys())
         
         # Fetch prices for all tokens at once (avoids rate limiting in PDF generation)
         token_prices_dict = {}
@@ -323,7 +332,7 @@ def export_pdf(blockchain, address):
         usd_to_aed_rate = currency_service.get_usd_to_aed_rate()
         logger.info(f"Using USD/AED rate: {usd_to_aed_rate}")
         
-        # Combine balance and price data for token balances
+        # Combine balance and price data for current token balances
         if token_balances:
             logger.info(f"🔍 DEBUG: Processing {len(token_balances)} tokens for PDF")
             for token_symbol, token_info in token_balances.items():
@@ -345,7 +354,29 @@ def export_pdf(blockchain, address):
                     'value_aed': value_usd * usd_to_aed_rate  # Correct AED value
                 }
                 logger.info(f"✅ Added to PDF: {token_symbol}: balance={token_info['balance']}, price_usd={token_prices['usd']}, value_usd={value_usd}")
+        
+        # Combine balance and price data for opening token balances
+        if opening_token_balances:
+            logger.info(f"🔍 DEBUG: Processing {len(opening_token_balances)} opening tokens for PDF")
+            for token_symbol, token_info in opening_token_balances.items():
+                token_prices = token_prices_dict.get(token_symbol, {'usd': 0, 'aed': 0})
+                
+                value_usd = token_info['balance'] * token_prices['usd']
+                opening_token_balances_with_prices[token_symbol] = {
+                    'balance': token_info['balance'],
+                    'contract': token_info['contract'],
+                    'name': token_info['name'],
+                    'decimals': token_info['decimals'],
+                    'price_usd': token_prices['usd'],
+                    'price_aed': token_prices['usd'] * usd_to_aed_rate,
+                    'value_usd': value_usd,
+                    'value_aed': value_usd * usd_to_aed_rate
+                }
+                logger.info(f"✅ Added opening balance to PDF: {token_symbol}: balance={token_info['balance']}, value_usd={value_usd}")
         else:
+            logger.info("No opening token balances to process")
+        
+        if not token_balances:
             logger.error("❌ NO TOKEN BALANCES TO PROCESS!")
         
         pdf_bytes = pdf_generator.generate_account_statement(
@@ -360,7 +391,8 @@ def export_pdf(blockchain, address):
             token_prices=token_prices_dict,  # Pass pre-fetched token prices
             usd_to_aed_rate=usd_to_aed_rate,  # Pass exchange rate
             opening_balance=opening_balance,  # Pass opening balance if available
-            opening_balance_date=opening_balance_date  # Pass opening balance date
+            opening_balance_date=opening_balance_date,  # Pass opening balance date
+            opening_token_balances=opening_token_balances_with_prices  # Pass opening token balances
         )
         
         pdf_buffer = io.BytesIO(pdf_bytes)

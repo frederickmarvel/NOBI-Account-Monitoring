@@ -549,7 +549,20 @@ class BlockchainService:
             opening_ts = int(opening_datetime.replace(hour=23, minute=59, second=59).timestamp())
             opening_balance_date = opening_datetime.strftime('%Y-%m-%d')
             
-            # Parse transactions and calculate opening balance
+            # Get current token balances first
+            current_token_balances = self.get_solana_token_balances(address)
+            
+            # Initialize opening token balances with current balances
+            opening_token_balances = {}
+            for symbol, token_data in current_token_balances.items():
+                opening_token_balances[symbol] = {
+                    'balance': token_data['balance'],  # Will be adjusted
+                    'contract': token_data['contract'],
+                    'name': token_data['name'],
+                    'decimals': token_data['decimals']
+                }
+            
+            # Parse transactions and calculate opening balances
             transactions = []
             if 'result' in sig_data:
                 for sig_info in sig_data['result']:
@@ -631,23 +644,42 @@ class BlockchainService:
                             if 'result' in tx_data and tx_data['result']:
                                 parsed_tx = self._parse_solana_tx(tx_data['result'], address, sig_info['signature'])
                                 if parsed_tx:
-                                    # Reverse the transaction
-                                    amount_lamports = int(float(parsed_tx.get('amount', 0)) * 1e9)
-                                    fee_lamports = parsed_tx.get('fee', 0)
+                                    # Check if this is a token transfer or SOL transfer
+                                    token_symbol = parsed_tx.get('tokenSymbol')
                                     
-                                    if parsed_tx.get('direction') == 'in':
-                                        # Was incoming, subtract from current to get opening
-                                        opening_balance_lamports -= amount_lamports
-                                    elif parsed_tx.get('direction') == 'out':
-                                        # Was outgoing, add back (including fee)
-                                        opening_balance_lamports += (amount_lamports + fee_lamports)
+                                    if token_symbol and token_symbol in opening_token_balances:
+                                        # This is a token transfer - reverse it
+                                        amount = float(parsed_tx.get('amount', 0))
+                                        direction = parsed_tx.get('direction')
+                                        
+                                        if direction == 'in':
+                                            # Was incoming, subtract to get opening balance
+                                            opening_token_balances[token_symbol]['balance'] -= amount
+                                        elif direction == 'out':
+                                            # Was outgoing, add back to get opening balance
+                                            opening_token_balances[token_symbol]['balance'] += amount
+                                        
+                                        logger.info(f"Reversed {token_symbol} tx: {direction} {amount}, new opening balance: {opening_token_balances[token_symbol]['balance']}")
+                                    
+                                    elif not token_symbol:
+                                        # This is a SOL transfer - reverse it for SOL opening balance
+                                        amount_lamports = int(float(parsed_tx.get('amount', 0)) * 1e9)
+                                        fee_lamports = parsed_tx.get('fee', 0)
+                                        
+                                        if parsed_tx.get('direction') == 'in':
+                                            # Was incoming, subtract from current to get opening
+                                            opening_balance_lamports -= amount_lamports
+                                        elif parsed_tx.get('direction') == 'out':
+                                            # Was outgoing, add back (including fee)
+                                            opening_balance_lamports += (amount_lamports + fee_lamports)
             
             logger.info(f"Found {len(transactions)} Solana transactions for {address} (from {start_date} to {end_date})")
             logger.info(f"Opening balance (as of {opening_balance_date}): {opening_balance_lamports / 1e9} SOL")
             logger.info(f"Current balance: {current_lamports / 1e9} SOL")
             
-            # Get SPL token balances
-            token_balances = self.get_solana_token_balances(address)
+            # Log opening token balances
+            for symbol, token_data in opening_token_balances.items():
+                logger.info(f"Opening {symbol} balance: {token_data['balance']}")
             
             return {
                 'success': True,
@@ -655,7 +687,8 @@ class BlockchainService:
                 'opening_balance': str(int(opening_balance_lamports)),
                 'opening_balance_date': opening_balance_date,
                 'transactions': transactions,
-                'token_balances': token_balances,
+                'token_balances': current_token_balances,  # Current token balances
+                'opening_token_balances': opening_token_balances,  # Opening token balances
                 'count': len(transactions)
             }
             

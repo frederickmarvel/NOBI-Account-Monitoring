@@ -60,7 +60,8 @@ class PDFReportGenerator:
         token_prices: Dict[str, Dict] = None,
         usd_to_aed_rate: float = 3.67,
         opening_balance: float = None,
-        opening_balance_date: str = None
+        opening_balance_date: str = None,
+        opening_token_balances: Dict[str, Dict] = None
     ) -> bytes:
         """
         Generate PDF account statement
@@ -104,20 +105,61 @@ class PDFReportGenerator:
             elements.append(opening_heading)
             elements.append(Spacer(1, 0.1*inch))
             
+            # Calculate opening values
             opening_value_usd = opening_balance * prices['usd']
             opening_value_aed = opening_value_usd * usd_to_aed_rate
             
+            # Calculate total opening value including tokens
+            total_opening_usd = opening_value_usd
+            if opening_token_balances:
+                for token_info in opening_token_balances.values():
+                    total_opening_usd += token_info['value_usd']
+            
+            # Create opening balance table
             opening_data = [
-                ['Asset', 'Balance', 'USD Value', 'AED Value'],
-                [
-                    crypto_symbol,
-                    f"{opening_balance:.6f}",
-                    f"${opening_value_usd:,.2f}",
-                    f"AED {opening_value_aed:,.2f}"
-                ]
+                ['Asset', 'Balance', 'USD Value', 'AED Value', '% of Portfolio']
             ]
             
-            opening_table = Table(opening_data, colWidths=[1.5*inch, 1.5*inch, 1.5*inch, 1.5*inch])
+            # Add SOL/native token
+            sol_percentage = (opening_value_usd / total_opening_usd * 100) if total_opening_usd > 0 else 0
+            opening_data.append([
+                crypto_symbol,
+                f"{opening_balance:.6f}",
+                f"${opening_value_usd:,.2f}",
+                f"AED {opening_value_aed:,.2f}",
+                f"{sol_percentage:.1f}%"
+            ])
+            
+            # Add tokens sorted by USD value
+            if opening_token_balances:
+                sorted_tokens = sorted(
+                    opening_token_balances.items(),
+                    key=lambda x: x[1]['value_usd'],
+                    reverse=True
+                )
+                
+                for token_symbol, token_info in sorted_tokens:
+                    token_percentage = (token_info['value_usd'] / total_opening_usd * 100) if total_opening_usd > 0 else 0
+                    opening_data.append([
+                        f"{token_symbol}",
+                        f"{token_info['balance']:.6f}",
+                        f"${token_info['value_usd']:,.2f}",
+                        f"AED {token_info['value_aed']:,.2f}",
+                        f"{token_percentage:.1f}%"
+                    ])
+            
+            # Add separator and total
+            opening_data.append(['', '', '', '', ''])
+            total_opening_aed = total_opening_usd * usd_to_aed_rate
+            opening_data.append([
+                'TOTAL OPENING VALUE',
+                '',
+                f"${total_opening_usd:,.2f}",
+                f"AED {total_opening_aed:,.2f}",
+                '100%'
+            ])
+            
+            opening_table = Table(opening_data, colWidths=[1.5*inch, 1.3*inch, 1.3*inch, 1.3*inch, 1*inch])
             opening_table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#34495e')),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
@@ -125,9 +167,10 @@ class PDFReportGenerator:
                 ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
                 ('FONTSIZE', (0, 0), (-1, 0), 10),
                 ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
-                ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#ecf0f1')),
+                ('BACKGROUND', (0, 1), (-1, -3), colors.white),
                 ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-                ('FONTNAME', (0, 1), (-1, -1), 'Helvetica-Bold'),
+                ('FONTNAME', (0, -2), (-1, -1), 'Helvetica-Bold'),
+                ('BACKGROUND', (0, -2), (-1, -1), colors.HexColor('#ecf0f1')),
             ]))
             
             elements.append(opening_table)
