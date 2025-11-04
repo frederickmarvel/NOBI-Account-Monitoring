@@ -673,6 +673,7 @@ class BlockchainService:
             display_transactions = []
             sol_movements_before_start = 0
             token_movements_before_start = 0
+            missing_transaction_details = 0  # Track missing old transactions
             
             logger.info(f"🔄 STEP 2: Processing all transactions to calculate opening balance...")
             
@@ -708,6 +709,14 @@ class BlockchainService:
                         tx_data = tx_response.json()
                         if 'result' in tx_data and tx_data['result']:
                             parsed_tx = self._parse_solana_tx(tx_data['result'], address, sig_info['signature'])
+                        else:
+                            # Transaction details not available (too old for RPC)
+                            missing_transaction_details += 1
+                            if missing_transaction_details <= 3:
+                                tx_date = datetime.fromtimestamp(tx_time) if tx_time else 'Unknown'
+                                logger.warning(f"⚠️  Missing transaction details: {tx_date} - {sig_info['signature'][:30]}... (too old for RPC)")
+                    else:
+                        missing_transaction_details += 1
                     
                     # Fallback if no details available
                     if not parsed_tx:
@@ -775,6 +784,11 @@ class BlockchainService:
             logger.info(f"   - Transactions to display ({start_date} to {end_date}): {len(display_transactions)}")
             logger.info(f"   - Opening SOL balance (as of {opening_balance_date}): {opening_balance_lamports / 1e9}")
             logger.info(f"   - Current SOL balance: {current_lamports / 1e9}")
+            
+            if missing_transaction_details > 0:
+                logger.warning(f"⚠️  WARNING: {missing_transaction_details} old transactions have NO DETAILS (too old for public RPC)")
+                logger.warning(f"   Opening balance calculation may be incomplete!")
+                logger.warning(f"   Consider using a start date after {opening_balance_date} or use an archival RPC service")
             
             # Log opening token balances
             for symbol, token_data in opening_token_balances.items():
