@@ -578,7 +578,7 @@ const ui = {
     const tbody = document.getElementById('transaction-tbody');
     
     if (transactions.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; padding: 2rem;">No transactions found for this address in the selected date range.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; padding: 2rem;">No transactions found for this address in the selected date range.</td></tr>';
       return;
     }
     
@@ -587,10 +587,11 @@ const ui = {
       const amountPrefix = tx.direction === 'in' ? '+' : '-';
       const tokenSymbol = tx.tokenSymbol || tx.token || 'Unknown';
       const decimals = tokenSymbol === 'BTC' ? 8 : (tokenSymbol === 'SOL' ? 4 : 6);
+      const editedBadge = tx.edited ? ' <span style="font-size: 10px; color: var(--color-warning);">✏️</span>' : '';
       
       return `
         <tr>
-          <td>${utils.formatDate(tx.date)}</td>
+          <td>${utils.formatDate(tx.date)}${editedBadge}</td>
           <td><span class="tx-hash" onclick="ui.openTransactionLink('${tx.hash}')" title="${tx.hash}">${utils.formatAddress(tx.hash)}</span></td>
           <td><span class="tx-type">${tx.type}</span></td>
           <td title="${tx.direction === 'in' ? tx.from : tx.to}">${utils.formatAddress(tx.direction === 'in' ? tx.from : tx.to)}</td>
@@ -598,6 +599,12 @@ const ui = {
           <td>${tokenSymbol}</td>
           <td>${tx.usdValue ? utils.formatUSD(tx.usdValue) : 'N/A'}</td>
           <td><span class="status status--${tx.status.toLowerCase()}">${tx.status}</span></td>
+          <td>
+            <div class="transaction-actions">
+              <button class="action-btn edit-tx-btn" onclick="balanceEditor.editTransaction('${tx.hash}')" title="Edit">✏️</button>
+              <button class="action-btn delete-tx-btn" onclick="balanceEditor.deleteTransaction('${tx.hash}')" title="Delete">🗑</button>
+            </div>
+          </td>
         </tr>
       `;
     }).join('');
@@ -722,7 +729,218 @@ const transactionManager = {
   }
 };
 
-// Export Functions
+// Manual Balance Editor Manager
+const balanceEditor = {
+  isVisible: false,
+  originalData: null,
+  manualEdits: {
+    openingBalance: null,
+    currentBalance: null,
+    deletedTransactions: new Set()
+  },
+
+  toggleEditor: () => {
+    const editor = document.getElementById('balance-editor');
+    const toggleBtn = document.getElementById('toggle-balance-editor-btn');
+    
+    balanceEditor.isVisible = !balanceEditor.isVisible;
+    editor.style.display = balanceEditor.isVisible ? 'block' : 'none';
+    toggleBtn.textContent = balanceEditor.isVisible ? '✖ Close Editor' : '✏️ Edit Balances';
+    
+    if (balanceEditor.isVisible && !balanceEditor.originalData) {
+      balanceEditor.loadCurrentData();
+    }
+  },
+
+  loadCurrentData: () => {
+    if (!AppState.currentAnalysis) return;
+    
+    const { stats } = AppState.currentAnalysis;
+    
+    // Store original data for reset
+    balanceEditor.originalData = {
+      openingBalance: {
+        native: stats.currentBalance || 0, // This should be actual opening balance
+        tokens: []
+      },
+      currentBalance: {
+        native: stats.currentBalance || 0,
+        tokens: []
+      }
+    };
+    
+    // Populate fields
+    document.getElementById('edit-opening-native').value = balanceEditor.originalData.openingBalance.native;
+    document.getElementById('edit-current-native').value = balanceEditor.originalData.currentBalance.native;
+  },
+
+  addTokenField: (section) => {
+    const container = document.getElementById(`${section}-tokens-editor`);
+    const tokenItem = document.createElement('div');
+    tokenItem.className = 'token-editor-item';
+    tokenItem.innerHTML = `
+      <input type="text" placeholder="Token Symbol" class="token-symbol">
+      <input type="number" step="any" placeholder="Amount" class="token-amount">
+      <button class="remove-token-btn" onclick="this.parentElement.remove()">🗑</button>
+    `;
+    container.appendChild(tokenItem);
+  },
+
+  applyChanges: () => {
+    // Get edited values
+    const openingNative = parseFloat(document.getElementById('edit-opening-native').value) || 0;
+    const currentNative = parseFloat(document.getElementById('edit-current-native').value) || 0;
+    
+    // Get opening tokens
+    const openingTokens = [];
+    document.querySelectorAll('#opening-tokens-editor .token-editor-item').forEach(item => {
+      const symbol = item.querySelector('.token-symbol').value.trim();
+      const amount = parseFloat(item.querySelector('.token-amount').value) || 0;
+      if (symbol && amount > 0) {
+        openingTokens.push({ symbol, amount });
+      }
+    });
+    
+    // Get current tokens
+    const currentTokens = [];
+    document.querySelectorAll('#current-tokens-editor .token-editor-item').forEach(item => {
+      const symbol = item.querySelector('.token-symbol').value.trim();
+      const amount = parseFloat(item.querySelector('.token-amount').value) || 0;
+      if (symbol && amount > 0) {
+        currentTokens.push({ symbol, amount });
+      }
+    });
+    
+    // Store manual edits
+    balanceEditor.manualEdits.openingBalance = {
+      native: openingNative,
+      tokens: openingTokens
+    };
+    
+    balanceEditor.manualEdits.currentBalance = {
+      native: currentNative,
+      tokens: currentTokens
+    };
+    
+    ui.showToast('✅ Balance changes applied! These values will be used in exports.', 'success');
+  },
+
+  resetChanges: () => {
+    if (!balanceEditor.originalData) return;
+    
+    // Reset to original values
+    document.getElementById('edit-opening-native').value = balanceEditor.originalData.openingBalance.native;
+    document.getElementById('edit-current-native').value = balanceEditor.originalData.currentBalance.native;
+    
+    // Clear token fields
+    document.getElementById('opening-tokens-editor').innerHTML = '';
+    document.getElementById('current-tokens-editor').innerHTML = '';
+    
+    // Clear manual edits
+    balanceEditor.manualEdits = {
+      openingBalance: null,
+      currentBalance: null,
+      deletedTransactions: new Set()
+    };
+    
+    ui.showToast('Reset to original values', 'info');
+  },
+
+  deleteTransaction: (txHash) => {
+    if (confirm('Are you sure you want to delete this transaction?')) {
+      balanceEditor.manualEdits.deletedTransactions.add(txHash);
+      
+      // Remove from filtered transactions
+      AppState.filteredTransactions = AppState.filteredTransactions.filter(tx => tx.hash !== txHash);
+      
+      // Re-render table
+      transactionManager.renderTransactions();
+      transactionManager.updatePagination();
+      
+      ui.showToast('Transaction deleted. It will be excluded from exports.', 'success');
+    }
+  },
+
+  editTransaction: (txHash) => {
+    const tx = AppState.filteredTransactions.find(t => t.hash === txHash);
+    if (!tx) return;
+    
+    // Create modal
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.innerHTML = `
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>Edit Transaction</h3>
+          <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">✕</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label>Date</label>
+            <input type="text" id="edit-tx-date" value="${tx.date}">
+          </div>
+          <div class="form-group">
+            <label>Type</label>
+            <select id="edit-tx-type">
+              ${transactionTypes.map(type => 
+                `<option value="${type}" ${tx.type === type ? 'selected' : ''}>${type}</option>`
+              ).join('')}
+            </select>
+          </div>
+          <div class="form-group">
+            <label>From/To</label>
+            <input type="text" id="edit-tx-from" value="${tx.from || ''}">
+          </div>
+          <div class="form-group">
+            <label>Amount</label>
+            <input type="number" step="any" id="edit-tx-amount" value="${tx.amount}">
+          </div>
+          <div class="form-group">
+            <label>Token</label>
+            <input type="text" id="edit-tx-token" value="${tx.token}">
+          </div>
+          <div class="form-group">
+            <label>USD Value</label>
+            <input type="number" step="any" id="edit-tx-usd" value="${tx.usd || 0}">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="modal-cancel" onclick="this.closest('.modal-overlay').remove()">Cancel</button>
+          <button class="modal-save" id="save-tx-edit">Save Changes</button>
+        </div>
+      </div>
+    `;
+    
+    document.body.appendChild(modal);
+    
+    // Save handler
+    document.getElementById('save-tx-edit').addEventListener('click', () => {
+      tx.date = document.getElementById('edit-tx-date').value;
+      tx.type = document.getElementById('edit-tx-type').value;
+      tx.from = document.getElementById('edit-tx-from').value;
+      tx.amount = parseFloat(document.getElementById('edit-tx-amount').value) || 0;
+      tx.token = document.getElementById('edit-tx-token').value;
+      tx.usd = parseFloat(document.getElementById('edit-tx-usd').value) || 0;
+      tx.edited = true; // Mark as edited
+      
+      transactionManager.renderTransactions();
+      modal.remove();
+      ui.showToast('Transaction updated successfully', 'success');
+    });
+  },
+
+  getEditedData: () => {
+    return {
+      openingBalance: balanceEditor.manualEdits.openingBalance,
+      currentBalance: balanceEditor.manualEdits.currentBalance,
+      transactions: AppState.filteredTransactions.filter(tx => 
+        !balanceEditor.manualEdits.deletedTransactions.has(tx.hash)
+      )
+    };
+  }
+};
+
+// Export Manager
 const exportManager = {
   exportToPDF: async () => {
     ui.toggleLoading('export-pdf-btn', true);
@@ -734,10 +952,13 @@ const exportManager = {
       
       const { address, blockchain, fromDate, toDate } = AppState.currentAnalysis;
       
+      // Get manual edits if any
+      const manualData = balanceEditor.getEditedData();
+      
       ui.showToast('Generating PDF with USD and AED conversions...', 'info');
       
       // Call backend to generate PDF
-      await apiService.exportPDF(blockchain, address, fromDate, toDate);
+      await apiService.exportPDF(blockchain, address, fromDate, toDate, manualData);
       
       ui.showToast('✅ PDF report with USD/AED conversions downloaded successfully!', 'success');
       
@@ -861,10 +1082,13 @@ const exportManager = {
       
       const { address, blockchain, fromDate, toDate } = AppState.currentAnalysis;
       
+      // Get manual edits if any
+      const manualData = balanceEditor.getEditedData();
+      
       ui.showToast('Generating CSV with opening balance...', 'info');
       
       // Call backend to generate CSV with opening balance
-      await apiService.exportCSV(blockchain, address, fromDate, toDate);
+      await apiService.exportCSV(blockchain, address, fromDate, toDate, manualData);
       
       ui.showToast('✅ CSV report with opening balance downloaded successfully!', 'success');
       
@@ -1101,6 +1325,19 @@ document.addEventListener('DOMContentLoaded', () => {
   const csvBtnAlt = document.getElementById('export-csv-btn-alt');
   if (pdfBtnAlt) pdfBtnAlt.addEventListener('click', exportManager.exportToPDF);
   if (csvBtnAlt) csvBtnAlt.addEventListener('click', exportManager.exportToCSV);
+  
+  // Balance editor buttons
+  const toggleEditorBtn = document.getElementById('toggle-balance-editor-btn');
+  const applyEditsBtn = document.getElementById('apply-balance-edits-btn');
+  const resetEditsBtn = document.getElementById('reset-balance-edits-btn');
+  const addOpeningTokenBtn = document.getElementById('add-opening-token-btn');
+  const addCurrentTokenBtn = document.getElementById('add-current-token-btn');
+  
+  if (toggleEditorBtn) toggleEditorBtn.addEventListener('click', balanceEditor.toggleEditor);
+  if (applyEditsBtn) applyEditsBtn.addEventListener('click', balanceEditor.applyChanges);
+  if (resetEditsBtn) resetEditsBtn.addEventListener('click', balanceEditor.resetChanges);
+  if (addOpeningTokenBtn) addOpeningTokenBtn.addEventListener('click', () => balanceEditor.addTokenField('opening'));
+  if (addCurrentTokenBtn) addCurrentTokenBtn.addEventListener('click', () => balanceEditor.addTokenField('current'));
 });
 
 // Global error handler
@@ -1117,5 +1354,6 @@ window.BlockchainBalanceScreener = {
   chartManager,
   ui,
   transactionManager,
-  exportManager
+  exportManager,
+  balanceEditor
 };

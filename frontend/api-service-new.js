@@ -79,11 +79,30 @@ class BlockchainAPIService {
   }
 
   // Export PDF with USD/AED conversions
-  async exportPDF(blockchain, address, startDate, endDate) {
+  async exportPDF(blockchain, address, startDate, endDate, manualData = null) {
     const endpoint = `${this.backendUrl}/export/pdf/${blockchain}/${address}?start_date=${startDate}&end_date=${endDate}`;
     
     try {
-      const response = await fetch(endpoint);
+      const options = {
+        method: 'GET'
+      };
+      
+      // If manual data is provided, use POST instead to send the data
+      if (manualData && (manualData.openingBalance || manualData.currentBalance || manualData.transactions)) {
+        options.method = 'POST';
+        options.headers = {
+          'Content-Type': 'application/json'
+        };
+        options.body = JSON.stringify({
+          manualData: {
+            openingBalance: manualData.openingBalance,
+            currentBalance: manualData.currentBalance,
+            transactions: manualData.transactions
+          }
+        });
+      }
+      
+      const response = await fetch(endpoint, options);
       
       if (!response.ok) {
         throw new Error(`Failed to generate PDF: ${response.statusText}`);
@@ -116,21 +135,32 @@ class BlockchainAPIService {
   }
 
   // Export CSV with opening balance
-  async exportCSV(blockchain, address, startDate, endDate) {
+  async exportCSV(blockchain, address, startDate, endDate, manualData = null) {
     const endpoint = `${this.backendUrl}/export-csv`;
     
     try {
+      const requestBody = {
+        blockchain,
+        address,
+        startDate,
+        endDate
+      };
+      
+      // Add manual data if provided
+      if (manualData && (manualData.openingBalance || manualData.currentBalance || manualData.transactions)) {
+        requestBody.manualData = {
+          openingBalance: manualData.openingBalance,
+          currentBalance: manualData.currentBalance,
+          transactions: manualData.transactions
+        };
+      }
+      
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({
-          blockchain,
-          address,
-          startDate,
-          endDate
-        })
+        body: JSON.stringify(requestBody)
       });
       
       if (!response.ok) {
