@@ -915,6 +915,48 @@ class BlockchainService:
             if not account_keys:
                 return None
             
+            # Initialize transaction type detection
+            tx_type = 'Transfer'
+            program_involved = []
+            
+            # Check which programs are involved
+            instructions = message.get('instructions', [])
+            for instruction in instructions:
+                if isinstance(instruction, dict):
+                    program_id_index = instruction.get('programIdIndex', -1)
+                    if 0 <= program_id_index < len(account_keys):
+                        program_key = account_keys[program_id_index]
+                        program_id = program_key if isinstance(program_key, str) else program_key.get('pubkey', '')
+                        program_involved.append(program_id)
+            
+            # Detect transaction type based on program IDs
+            # Common Solana program IDs
+            TOKEN_PROGRAM = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'
+            SYSTEM_PROGRAM = '11111111111111111111111111111111'
+            STAKE_PROGRAM = 'Stake11111111111111111111111111111111111111'
+            ASSOCIATED_TOKEN_PROGRAM = 'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL'
+            
+            # Known DEX program IDs
+            DEX_PROGRAMS = {
+                'JUP4Fb2cqiRUcaTHdrPC8h2gNsA2ETXiPDD33WcGuJB': 'Jupiter',
+                'JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4': 'Jupiter V6',
+                'whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc': 'Orca',
+                '9W959DqEETiGZocYWCQPaJ6sBmUzgfxXfqGeTEdp3aQP': 'Orca V2',
+                'DjVE6JNiYqPL2QXyCUUh8rNjHrbz9hXHNYt99MQ59qw1': 'Raydium',
+                '675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8': 'Raydium AMM',
+                'PhoeNiXZ8ByJGLkxNfZRnkUfjvmuYqLR89jjFHGqdXY': 'Phoenix',
+            }
+            
+            for program_id in program_involved:
+                if program_id in DEX_PROGRAMS:
+                    tx_type = f'Swap ({DEX_PROGRAMS[program_id]})'
+                    break
+                elif program_id == STAKE_PROGRAM:
+                    tx_type = 'Stake/Unstake'
+                    break
+                elif program_id == ASSOCIATED_TOKEN_PROGRAM:
+                    tx_type = 'Token Account'
+            
             # Check for SPL token transfers in BOTH instructions and innerInstructions
             token_transfer = None
             token_info = None
@@ -1045,11 +1087,14 @@ class BlockchainService:
                     
                     logger.info(f"✅ Found {token_info['symbol']} transfer: {amount} ({('in' if is_incoming else 'out')})")
                     
+                    # Use detected tx_type if it's a swap, otherwise "Token Transfer"
+                    final_tx_type = tx_type if 'Swap' in tx_type else 'Token Transfer'
+                    
                     return {
                         'hash': signature,
                         'timestamp': block_time,
                         'date': datetime.fromtimestamp(block_time).isoformat() if block_time else 'Unknown',
-                        'type': 'Token Transfer',
+                        'type': final_tx_type,
                         'direction': 'in' if is_incoming else 'out',
                         'from': source,
                         'to': destination,
@@ -1106,11 +1151,14 @@ class BlockchainService:
             err = meta.get('err')
             status = 'Failed' if err else 'Success'
             
+            # Use detected transaction type, default to "SOL Transfer"
+            final_tx_type = tx_type if tx_type != 'Transfer' else 'SOL Transfer'
+            
             return {
                 'hash': signature,
                 'timestamp': block_time,
                 'date': datetime.fromtimestamp(block_time).isoformat() if block_time else 'Unknown',
-                'type': 'SOL Transfer',
+                'type': final_tx_type,
                 'direction': 'in' if is_incoming else 'out',
                 'from': from_address,
                 'to': to_address,
