@@ -907,13 +907,26 @@ class BlockchainService:
             transaction = tx.get('transaction', {})
             message = transaction.get('message', {})
             
+            # 🔍 DEBUG: Log raw transaction structure
+            logger.info(f"\n{'='*80}")
+            logger.info(f"🔍 PARSING TX: {signature[:16]}...")
+            logger.info(f"📦 RAW TX KEYS: {list(tx.keys())}")
+            logger.info(f"📦 META KEYS: {list(meta.keys()) if meta else 'NO META'}")
+            logger.info(f"📦 TRANSACTION KEYS: {list(transaction.keys()) if transaction else 'NO TRANSACTION'}")
+            logger.info(f"📦 MESSAGE KEYS: {list(message.keys()) if message else 'NO MESSAGE'}")
+            
             # Get timestamp
             block_time = tx.get('blockTime', 0)
+            logger.info(f"⏰ Block Time: {block_time} ({datetime.fromtimestamp(block_time).isoformat() if block_time else 'NO TIMESTAMP'})")
             
             # Get account keys
             account_keys = message.get('accountKeys', [])
+            logger.info(f"👥 Account Keys: {len(account_keys)} accounts")
+            if account_keys:
+                logger.info(f"   First 3 accounts: {account_keys[:3]}")
             if not account_keys:
                 # Return a basic transaction with link instead of None
+                logger.warning(f"⚠️  NO ACCOUNT KEYS - Returning explorer link")
                 return {
                     'hash': signature,
                     'timestamp': block_time,
@@ -940,13 +953,17 @@ class BlockchainService:
             
             # Check which programs are involved
             instructions = message.get('instructions', [])
-            for instruction in instructions:
+            logger.info(f"📋 Instructions: {len(instructions)} instructions")
+            for idx, instruction in enumerate(instructions):
                 if isinstance(instruction, dict):
                     program_id_index = instruction.get('programIdIndex', -1)
                     if 0 <= program_id_index < len(account_keys):
                         program_key = account_keys[program_id_index]
                         program_id = program_key if isinstance(program_key, str) else program_key.get('pubkey', '')
                         program_involved.append(program_id)
+                        logger.info(f"   Instruction {idx}: Program {program_id[:16]}...")
+            
+            logger.info(f"🔧 Programs Involved: {len(program_involved)}")
             
             # Detect transaction type based on program IDs
             # Common Solana program IDs
@@ -1019,20 +1036,25 @@ class BlockchainService:
             
             # Check regular instructions
             instructions = message.get('instructions', [])
-            for instruction in instructions:
+            logger.info(f"🔍 Checking {len(instructions)} regular instructions for token transfers...")
+            for idx, instruction in enumerate(instructions):
                 token_transfer, token_info = check_instruction_for_token(instruction)
                 if token_transfer and token_info:
+                    logger.info(f"   ✅ Found token transfer in instruction {idx}: {token_info.get('symbol')}")
                     break
             
             # If not found, check innerInstructions (this is important!)
             if not token_transfer or not token_info:
                 inner_instructions = meta.get('innerInstructions', [])
-                for inner_group in inner_instructions:
+                logger.info(f"🔍 Checking {len(inner_instructions)} inner instruction groups...")
+                for inner_idx, inner_group in enumerate(inner_instructions):
                     if isinstance(inner_group, dict):
                         inner_instrs = inner_group.get('instructions', [])
+                        logger.info(f"   Group {inner_idx}: {len(inner_instrs)} inner instructions")
                         for instruction in inner_instrs:
                             token_transfer, token_info = check_instruction_for_token(instruction)
                             if token_transfer and token_info:
+                                logger.info(f"   ✅ Found token transfer in inner instruction: {token_info.get('symbol')}")
                                 break
                         if token_transfer and token_info:
                             break
@@ -1041,6 +1063,7 @@ class BlockchainService:
             if not token_transfer or not token_info:
                 pre_token_balances = meta.get('preTokenBalances', [])
                 post_token_balances = meta.get('postTokenBalances', [])
+                logger.info(f"🔍 Checking token balance changes: {len(pre_token_balances)} pre, {len(post_token_balances)} post")
                 
                 # Find token balance changes
                 for post_bal in post_token_balances:
@@ -1059,6 +1082,7 @@ class BlockchainService:
                         
                         # If there's a change, this is a token transfer
                         if pre_amount != post_amount:
+                            logger.info(f"   ✅ Found balance change for {self.WHITELISTED_SOLANA_TOKENS[mint]['symbol']}: {pre_amount} → {post_amount}")
                             token_info = self.WHITELISTED_SOLANA_TOKENS[mint]
                             amount = abs(post_amount - pre_amount)
                             is_incoming = post_amount > pre_amount
@@ -1134,15 +1158,19 @@ class BlockchainService:
             pre_balances = meta.get('preBalances', [])
             post_balances = meta.get('postBalances', [])
             
+            logger.info(f"💰 Balance Changes: {len(pre_balances)} accounts")
+            
             # Find user's account index
             user_index = -1
             for i, key in enumerate(account_keys):
                 key_str = key if isinstance(key, str) else key.get('pubkey', '')
                 if key_str == user_address:
                     user_index = i
+                    logger.info(f"👤 User found at index {i}")
                     break
             
             if user_index == -1:
+                logger.warning(f"⚠️  User NOT in account keys - Indirect transaction")
                 # User not directly involved - show transaction link for inspection
                 from_key = account_keys[0] if isinstance(account_keys[0], str) else account_keys[0].get('pubkey', '')
                 to_key = account_keys[1] if len(account_keys) >= 2 else ''
@@ -1172,6 +1200,7 @@ class BlockchainService:
             balance_change = 0
             if user_index < len(pre_balances) and user_index < len(post_balances):
                 balance_change = post_balances[user_index] - pre_balances[user_index]
+                logger.info(f"💵 Balance Change: {balance_change / 1e9} SOL ({pre_balances[user_index] / 1e9} → {post_balances[user_index] / 1e9})")
             
             # Determine direction
             is_incoming = balance_change > 0
@@ -1179,6 +1208,7 @@ class BlockchainService:
             
             # Get fee
             fee = meta.get('fee', 0) / 1e9
+            logger.info(f"⛽ Fee: {fee} SOL")
             
             # Try to find sender and receiver
             from_address = ''
@@ -1188,13 +1218,17 @@ class BlockchainService:
                 to_key = account_keys[1] if isinstance(account_keys[1], str) else account_keys[1].get('pubkey', '')
                 from_address = from_key
                 to_address = to_key
+                logger.info(f"📍 From: {from_address[:16]}... To: {to_address[:16]}...")
             
             # Check if it's an error transaction
             err = meta.get('err')
             status = 'Failed' if err else 'Success'
+            logger.info(f"✓ Status: {status}, Amount: {amount} SOL, Direction: {'IN' if is_incoming else 'OUT'}")
             
             # Use detected transaction type, default to "SOL Transfer"
             final_tx_type = tx_type if tx_type != 'Transfer' else 'SOL Transfer'
+            logger.info(f"🏷️  Final Type: {final_tx_type}")
+            logger.info(f"{'='*80}\n")
             
             return {
                 'hash': signature,
@@ -1216,7 +1250,10 @@ class BlockchainService:
                 'fee': fee
             }
         except Exception as e:
-            logger.error(f"Error parsing Solana transaction {signature}: {str(e)}")
+            logger.error(f"❌ ERROR parsing Solana transaction {signature}: {str(e)}")
+            logger.error(f"   Exception type: {type(e).__name__}")
+            import traceback
+            logger.error(f"   Traceback:\n{traceback.format_exc()}")
             # Return a basic transaction with link instead of None
             try:
                 block_time = tx.get('blockTime', 0) if tx else 0

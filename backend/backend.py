@@ -1,8 +1,9 @@
 from flask import Flask, request, jsonify, send_from_directory, send_file
 from flask_cors import CORS
 from blockchain_service import BlockchainService
+from database_service import DatabaseService
 from currency_service import CurrencyExchangeService
-from pdf_generator import PDFReportGenerator
+# from pdf_generator import PDFReportGenerator  # Old RPC-based generator
 from csv_generator import CSVGenerator
 import os
 from dotenv import load_dotenv
@@ -23,6 +24,13 @@ SOLSCAN_API_KEY = os.getenv('SOLSCAN_API_KEY')
 TRONSCAN_API_KEY = os.getenv('TRONSCAN_API_KEY')
 CARDANOSCAN_API_KEY = os.getenv('CARDANOSCAN_API_KEY')
 
+# Database configuration
+DB_HOST = os.getenv('DB_HOST', '217.216.110.33')
+DB_PORT = int(os.getenv('DB_PORT', '3306'))
+DB_USER = os.getenv('DB_USER', 'root')
+DB_PASSWORD = os.getenv('DB_PASSWORD', 'nobicuan888')
+DB_NAME = os.getenv('DB_NAME', 'nobi_wallet_tracker')
+
 if not ETHERSCAN_API_KEY:
     logger.warning("ETHERSCAN_API_KEY not found in environment variables!")
 if not SOLSCAN_API_KEY:
@@ -32,6 +40,7 @@ if not TRONSCAN_API_KEY:
 if not CARDANOSCAN_API_KEY:
     logger.warning("CARDANOSCAN_API_KEY not found - Cardano support will use free tier with limits!")
 
+# Initialize services
 blockchain_service = BlockchainService(
     api_key=ETHERSCAN_API_KEY, 
     solscan_api_key=SOLSCAN_API_KEY,
@@ -39,8 +48,23 @@ blockchain_service = BlockchainService(
     cardanoscan_api_key=CARDANOSCAN_API_KEY
 )
 currency_service = CurrencyExchangeService()
-pdf_generator = PDFReportGenerator()
+# pdf_generator = PDFReportGenerator()  # Old generator - now using database-based generation
 csv_generator = CSVGenerator()
+
+# Initialize database service
+database_service = DatabaseService(
+    host=DB_HOST,
+    port=DB_PORT,
+    username=DB_USER,
+    password=DB_PASSWORD,
+    database=DB_NAME
+)
+
+# Connect to database on startup
+if not database_service.connect():
+    logger.error("Failed to connect to database on startup!")
+else:
+    logger.info("✅ Database service connected successfully")
 
 CHAIN_IDS = {
     'ethereum': 1,
@@ -69,6 +93,150 @@ def health_check():
         'service': 'Blockchain Monitoring API',
         'version': '1.0.0'
     })
+
+
+@app.route('/api/analyze-db/<address>', methods=['GET'])
+def analyze_wallet_from_database(address):
+    """
+    Analyze wallet using database (replaces RPC-based approach)
+    
+    Query Parameters:
+        - start_date: Opening balance date (YYYY-MM-DD)
+        - end_date: Current balance date (YYYY-MM-DD)
+        - network: Optional network filter (eth-mainnet, sol-mainnet, etc.)
+    
+    Returns:
+        {
+            "success": true,
+            "wallet_address": "0x...",
+            "opening_date": "2025-03-31",
+            "end_date": "2025-11-15",
+            "network": "eth-mainnet",
+            "opening_balance": {"ETH": 10.5, "USDC": 1000},
+            "current_balance": {"ETH": 15.2, "USDC": 1200},
+            "transactions": [...],
+            "transactions_counted_for_opening": 150,
+            "total_transactions_in_period": 25
+        }
+    """
+    try:
+        # Get query parameters
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        network = request.args.get('network')
+        
+        if not start_date:
+            return jsonify({
+                'success': False,
+                'error': 'start_date parameter is required (format: YYYY-MM-DD)'
+            }), 400
+        
+        logger.info(f"Analyzing wallet {address} from database")
+        logger.info(f"  Opening date: {start_date}")
+        logger.info(f"  End date: {end_date or 'current'}")
+        logger.info(f"  Network: {network or 'all'}")
+        
+        # Calculate opening balance
+        opening_balance_result = database_service.calculate_opening_balance(
+            address, 
+            start_date, 
+            network
+        )
+        
+        # Calculate current balance
+        current_balance_result = database_service.get_current_balance(
+            address, 
+            end_date, 
+            network
+        )
+        
+        # Get transactions in period
+        transactions = database_service.get_transactions_in_period(
+            address, 
+            start_date, 
+            end_date or current_balance_result['current_date'],
+            network
+        )
+        
+        # Format response
+        response = {
+            'success': True,
+            'wallet_address': address,
+            'opening_date': opening_balance_result['opening_date'],
+            'end_date': current_balance_result['current_date'],
+            'network': network or 'all',
+            'opening_balance': opening_balance_result['balances'],
+            'current_balance': current_balance_result['balances'],
+            'transactions': transactions,
+            'transactions_counted_for_opening': opening_balance_result['transactions_counted'],
+            'total_transactions_in_period': len(transactions)
+        }
+        
+        return jsonify(response)
+        
+    except Exception as e:
+        logger.error(f"Error analyzing wallet from database: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/export-pdf-db/<address>', methods=['GET'])
+def export_pdf_db(address):
+    """Export wallet statement as PDF using database data"""
+    try:
+        # Import PDF generator
+        from pdf_generator import generate_pdf_statement
+        
+        # Get query parameters
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        network = request.args.get('network')
+        
+        if not start_date:
+            return jsonify({
+                'success': False,
+                'error': 'start_date parameter is required'
+            }), 400
+        
+        logger.info(f"Generating PDF for wallet {address}")
+        
+        # Get data from database
+        opening_balance_result = database_service.calculate_opening_balance(address, start_date, network)
+        current_balance_result = database_service.get_current_balance(address, end_date, network)
+        transactions = database_service.get_transactions_in_period(
+            address, 
+            start_date, 
+            end_date or current_balance_result['current_date'],
+            network
+        )
+        
+        # Generate PDF
+        pdf_bytes = generate_pdf_statement(
+            wallet_address=address,
+            opening_date=start_date,
+            end_date=end_date or current_balance_result['current_date'],
+            opening_balance=opening_balance_result['balances'],
+            current_balance=current_balance_result['balances'],
+            transactions=transactions,
+            network=network
+        )
+        
+        # Return PDF file
+        from flask import make_response
+        response = make_response(pdf_bytes)
+        response.headers['Content-Type'] = 'application/pdf'
+        response.headers['Content-Disposition'] = f'attachment; filename=statement_{address[:8]}_{start_date}.pdf'
+        
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error generating PDF: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
 
 
 @app.route('/api/balance/<blockchain>/<address>', methods=['GET'])
@@ -218,231 +386,6 @@ def analyze_address(blockchain, address):
         }), 500
 
 
-@app.route('/api/export/pdf/<blockchain>/<address>', methods=['GET', 'POST'])
-def export_pdf(blockchain, address):
-    try:
-        start_date = request.args.get('start_date', '2020-01-01')
-        end_date = request.args.get('end_date', '2025-12-31')
-        
-        # Check for manual data (from POST request)
-        manual_data = None
-        if request.method == 'POST' and request.is_json:
-            manual_data = request.json.get('manualData')
-            if manual_data:
-                logger.info(f"📝 Using manual data overrides for PDF export")
-        
-        logger.info(f"Generating PDF for {blockchain} address {address}")
-        
-        # Get blockchain data
-        if blockchain == 'bitcoin':
-            data = blockchain_service.get_bitcoin_transactions(address, start_date, end_date)
-            crypto_symbol = 'BTC'
-        elif blockchain == 'solana':
-            data = blockchain_service.get_solana_transactions(address, start_date, end_date)
-            crypto_symbol = 'SOL'
-        elif blockchain == 'tron':
-            data = blockchain_service.get_tron_transactions(address, start_date, end_date)
-            crypto_symbol = 'TRX'
-        elif blockchain == 'cardano':
-            data = blockchain_service.get_cardano_transactions(address, start_date, end_date)
-            crypto_symbol = 'ADA'
-        elif blockchain in CHAIN_IDS:
-            chain_id = CHAIN_IDS[blockchain]
-            data = blockchain_service.get_ethereum_transactions(address, chain_id, start_date, end_date)
-            
-            # Get crypto symbol
-            # Note: Polygon migrated from MATIC to POL as native token
-            symbol_map = {
-                'ethereum': 'ETH', 'polygon': 'POL', 'bsc': 'BNB',
-                'arbitrum': 'ETH', 'optimism': 'ETH', 'avalanche': 'AVAX',
-                'base': 'ETH', 'blast': 'ETH', 'linea': 'ETH',
-                'scroll': 'ETH', 'zksync': 'ETH'
-            }
-            crypto_symbol = symbol_map.get(blockchain, 'ETH')
-        else:
-            return jsonify({
-                'success': False,
-                'error': f'Unsupported blockchain: {blockchain}'
-            }), 400
-        
-        if not data.get('success'):
-            return jsonify(data), 500
-        
-        # Get native token price
-        prices_data = currency_service.get_crypto_prices([crypto_symbol])
-        prices = prices_data.get(crypto_symbol, {'usd': 0, 'aed': 0})
-        
-        balance_raw = float(data.get('balance', 0))
-        opening_balance_raw = data.get('opening_balance')
-        opening_balance_date = data.get('opening_balance_date')
-        
-        if blockchain == 'bitcoin':
-            balance = balance_raw / 1e8
-            opening_balance = float(opening_balance_raw) / 1e8 if opening_balance_raw else None
-        elif blockchain == 'solana':
-            balance = balance_raw / 1e9  # lamports to SOL
-            opening_balance = float(opening_balance_raw) / 1e9 if opening_balance_raw else None
-        elif blockchain == 'tron':
-            balance = balance_raw / 1e6  # SUN to TRX
-            opening_balance = float(opening_balance_raw) / 1e6 if opening_balance_raw else None
-        elif blockchain == 'cardano':
-            balance = balance_raw / 1e6  # lovelace to ADA
-            opening_balance = float(opening_balance_raw) / 1e6 if opening_balance_raw else None
-        elif blockchain == 'ethereum' or blockchain in ['polygon', 'bsc', 'arbitrum', 'optimism', 'base', 'blast', 'linea', 'scroll', 'zksync']:
-            balance = balance_raw / 1e18
-            opening_balance = float(opening_balance_raw) / 1e18 if opening_balance_raw else None
-        else:
-            balance = balance_raw
-            opening_balance = float(opening_balance_raw) if opening_balance_raw else None
-        
-        # Override with manual data if provided
-        if manual_data:
-            if manual_data.get('currentBalance'):
-                manual_current = manual_data['currentBalance']
-                if manual_current.get('native') is not None:
-                    balance = float(manual_current['native'])
-                    logger.info(f"✏️ Using manual current balance: {balance}")
-            
-            if manual_data.get('openingBalance'):
-                manual_opening = manual_data['openingBalance']
-                if manual_opening.get('native') is not None:
-                    opening_balance = float(manual_opening['native'])
-                    logger.info(f"✏️ Using manual opening balance: {opening_balance}")
-        
-        transactions = data.get('transactions', [])
-        
-        # Override transactions if manual data provided
-        if manual_data and manual_data.get('transactions'):
-            transactions = manual_data['transactions']
-            logger.info(f"✏️ Using manual transactions: {len(transactions)} transactions")
-        
-        if transactions:
-            print(f"DEBUG BACKEND: First 3 transaction amounts: {[tx.get('amount', 'N/A') for tx in transactions[:3]]}")
-            print(f"DEBUG BACKEND: Balance raw: {balance_raw}, Balance converted: {balance}")
-            if opening_balance:
-                print(f"DEBUG BACKEND: Opening balance (as of {opening_balance_date}): {opening_balance}")
-        
-        # Get token balances and prices for EVM chains and Solana
-        token_balances_with_prices = {}
-        token_balances = data.get('token_balances', {})
-        
-        # Get opening token balances (for Solana)
-        opening_token_balances = data.get('opening_token_balances', {})
-        opening_token_balances_with_prices = {}
-        
-        # CRITICAL DEBUG: Log what we received from blockchain service
-        logger.info(f"🔍 DEBUG: Received {len(token_balances)} tokens from blockchain_service")
-        for sym, info in token_balances.items():
-            logger.info(f"   → {sym}: balance={info.get('balance', 0)}, contract={info.get('contract', 'N/A')[:20]}...")
-        
-        if opening_token_balances:
-            logger.info(f"🔍 DEBUG: Received {len(opening_token_balances)} opening token balances")
-            for sym, info in opening_token_balances.items():
-                logger.info(f"   → Opening {sym}: balance={info.get('balance', 0)}")
-        
-        # Collect all unique token symbols from transactions for price fetching
-        transaction_token_symbols = set()
-        for tx in transactions:
-            token_symbol = tx.get('tokenSymbol') or tx.get('token')
-            if token_symbol:
-                transaction_token_symbols.add(token_symbol)
-        
-        # Combine token symbols from balances and transactions
-        all_token_symbols = set(token_balances.keys()) | transaction_token_symbols | set(opening_token_balances.keys())
-        
-        # Fetch prices for all tokens at once (avoids rate limiting in PDF generation)
-        token_prices_dict = {}
-        if all_token_symbols:
-            logger.info(f"Fetching prices for tokens: {all_token_symbols}")
-            token_prices_dict = currency_service.get_crypto_prices(list(all_token_symbols))
-            logger.info(f"Fetched prices: {token_prices_dict}")
-        
-        # Get USD to AED exchange rate from currency service
-        usd_to_aed_rate = currency_service.get_usd_to_aed_rate()
-        logger.info(f"Using USD/AED rate: {usd_to_aed_rate}")
-        
-        # Combine balance and price data for current token balances
-        if token_balances:
-            logger.info(f"🔍 DEBUG: Processing {len(token_balances)} tokens for PDF")
-            for token_symbol, token_info in token_balances.items():
-                token_prices = token_prices_dict.get(token_symbol, {'usd': 0, 'aed': 0})
-                
-                # Log if price is 0
-                if token_prices['usd'] == 0:
-                    logger.warning(f"Price for {token_symbol} is 0! Token info: {token_info}")
-                
-                value_usd = token_info['balance'] * token_prices['usd']
-                token_balances_with_prices[token_symbol] = {
-                    'balance': token_info['balance'],
-                    'contract': token_info['contract'],
-                    'name': token_info['name'],
-                    'decimals': token_info['decimals'],
-                    'price_usd': token_prices['usd'],
-                    'price_aed': token_prices['usd'] * usd_to_aed_rate,  # Correct AED price
-                    'value_usd': value_usd,
-                    'value_aed': value_usd * usd_to_aed_rate  # Correct AED value
-                }
-                logger.info(f"✅ Added to PDF: {token_symbol}: balance={token_info['balance']}, price_usd={token_prices['usd']}, value_usd={value_usd}")
-        
-        # Combine balance and price data for opening token balances
-        if opening_token_balances:
-            logger.info(f"🔍 DEBUG: Processing {len(opening_token_balances)} opening tokens for PDF")
-            for token_symbol, token_info in opening_token_balances.items():
-                token_prices = token_prices_dict.get(token_symbol, {'usd': 0, 'aed': 0})
-                
-                value_usd = token_info['balance'] * token_prices['usd']
-                opening_token_balances_with_prices[token_symbol] = {
-                    'balance': token_info['balance'],
-                    'contract': token_info['contract'],
-                    'name': token_info['name'],
-                    'decimals': token_info['decimals'],
-                    'price_usd': token_prices['usd'],
-                    'price_aed': token_prices['usd'] * usd_to_aed_rate,
-                    'value_usd': value_usd,
-                    'value_aed': value_usd * usd_to_aed_rate
-                }
-                logger.info(f"✅ Added opening balance to PDF: {token_symbol}: balance={token_info['balance']}, value_usd={value_usd}")
-        else:
-            logger.info("No opening token balances to process")
-        
-        if not token_balances:
-            logger.error("❌ NO TOKEN BALANCES TO PROCESS!")
-        
-        pdf_bytes = pdf_generator.generate_account_statement(
-            address=address,
-            blockchain=blockchain,
-            transactions=data.get('transactions', []),
-            balance=balance,
-            crypto_symbol=crypto_symbol,
-            prices=prices,
-            date_range={'start': start_date, 'end': end_date},
-            token_balances=token_balances_with_prices,
-            token_prices=token_prices_dict,  # Pass pre-fetched token prices
-            usd_to_aed_rate=usd_to_aed_rate,  # Pass exchange rate
-            opening_balance=opening_balance,  # Pass opening balance if available
-            opening_balance_date=opening_balance_date,  # Pass opening balance date
-            opening_token_balances=opening_token_balances_with_prices  # Pass opening token balances
-        )
-        
-        pdf_buffer = io.BytesIO(pdf_bytes)
-        pdf_buffer.seek(0)
-        
-        filename = f"{blockchain}_{address[:8]}_statement_{start_date}_to_{end_date}.pdf"
-        
-        return send_file(
-            pdf_buffer,
-            mimetype='application/pdf',
-            as_attachment=True,
-            download_name=filename
-        )
-        
-    except Exception as e:
-        logger.error(f"Error generating PDF: {str(e)}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-
 
 @app.route('/api/export-csv', methods=['POST'])
 def export_csv():
@@ -456,11 +399,6 @@ def export_csv():
         address = data.get('address', '')
         start_date = data.get('startDate', '')
         end_date = data.get('endDate', '')
-        
-        # Check for manual data
-        manual_data = data.get('manualData')
-        if manual_data:
-            logger.info(f"📝 Using manual data overrides for CSV export")
         
         logger.info(f"CSV export request - Chain: {blockchain}, Address: {address}, Period: {start_date} to {end_date}")
         
@@ -526,25 +464,7 @@ def export_csv():
             current_balance = balance_raw
             opening_balance = float(opening_balance_raw) if opening_balance_raw else current_balance
         
-        # Override with manual data if provided
         transactions = data.get('transactions', [])
-        
-        if manual_data:
-            if manual_data.get('currentBalance'):
-                manual_current = manual_data['currentBalance']
-                if manual_current.get('native') is not None:
-                    current_balance = float(manual_current['native'])
-                    logger.info(f"✏️ Using manual current balance: {current_balance}")
-            
-            if manual_data.get('openingBalance'):
-                manual_opening = manual_data['openingBalance']
-                if manual_opening.get('native') is not None:
-                    opening_balance = float(manual_opening['native'])
-                    logger.info(f"✏️ Using manual opening balance: {opening_balance}")
-            
-            if manual_data.get('transactions'):
-                transactions = manual_data['transactions']
-                logger.info(f"✏️ Using manual transactions: {len(transactions)} transactions")
         
         # Generate CSV
         csv_content = csv_generator.generate_transaction_csv(

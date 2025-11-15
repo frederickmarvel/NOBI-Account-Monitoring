@@ -599,30 +599,9 @@ const ui = {
           <td>${tokenSymbol}</td>
           <td>${tx.usdValue ? utils.formatUSD(tx.usdValue) : 'N/A'}</td>
           <td><span class="status status--${tx.status.toLowerCase()}">${tx.status}</span></td>
-          <td>
-            <div class="transaction-actions">
-              <button class="action-btn edit-tx-btn" data-tx-hash="${tx.hash}" title="Edit">✏️</button>
-              <button class="action-btn delete-tx-btn" data-tx-hash="${tx.hash}" title="Delete">🗑</button>
-            </div>
-          </td>
         </tr>
       `;
     }).join('');
-    
-    // Add event listeners to edit and delete buttons
-    tbody.querySelectorAll('.edit-tx-btn').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        const hash = e.target.getAttribute('data-tx-hash');
-        balanceEditor.editTransaction(hash);
-      });
-    });
-    
-    tbody.querySelectorAll('.delete-tx-btn').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        const hash = e.target.getAttribute('data-tx-hash');
-        balanceEditor.deleteTransaction(hash);
-      });
-    });
   },
   
   updatePagination: () => {
@@ -744,247 +723,6 @@ const transactionManager = {
   }
 };
 
-// Manual Balance Editor Manager
-const balanceEditor = {
-  isVisible: false,
-  originalData: null,
-  manualEdits: {
-    openingBalance: null,
-    currentBalance: null,
-    deletedTransactions: new Set()
-  },
-
-  toggleEditor: () => {
-    const editor = document.getElementById('balance-editor');
-    const toggleBtn = document.getElementById('toggle-balance-editor-btn');
-    
-    balanceEditor.isVisible = !balanceEditor.isVisible;
-    editor.style.display = balanceEditor.isVisible ? 'block' : 'none';
-    toggleBtn.textContent = balanceEditor.isVisible ? '✖ Close Editor' : '✏️ Edit Balances';
-    
-    if (balanceEditor.isVisible && !balanceEditor.originalData) {
-      balanceEditor.loadCurrentData();
-    }
-  },
-
-  loadCurrentData: () => {
-    if (!AppState.currentAnalysis) return;
-    
-    const { stats } = AppState.currentAnalysis;
-    
-    // Store original data for reset
-    balanceEditor.originalData = {
-      openingBalance: {
-        native: stats.currentBalance || 0, // This should be actual opening balance
-        tokens: []
-      },
-      currentBalance: {
-        native: stats.currentBalance || 0,
-        tokens: []
-      }
-    };
-    
-    // Populate fields
-    document.getElementById('edit-opening-native').value = balanceEditor.originalData.openingBalance.native;
-    document.getElementById('edit-current-native').value = balanceEditor.originalData.currentBalance.native;
-  },
-
-  addTokenField: (section) => {
-    const container = document.getElementById(`${section}-tokens-editor`);
-    const tokenItem = document.createElement('div');
-    tokenItem.className = 'token-editor-item';
-    tokenItem.innerHTML = `
-      <input type="text" placeholder="Token Symbol" class="token-symbol">
-      <input type="number" step="any" placeholder="Amount" class="token-amount">
-      <button class="remove-token-btn" onclick="this.parentElement.remove()">🗑</button>
-    `;
-    container.appendChild(tokenItem);
-  },
-
-  applyChanges: () => {
-    // Get edited values
-    const openingNative = parseFloat(document.getElementById('edit-opening-native').value) || 0;
-    const currentNative = parseFloat(document.getElementById('edit-current-native').value) || 0;
-    
-    console.log('📝 Applying manual edits:', { openingNative, currentNative });
-    
-    // Get opening tokens
-    const openingTokens = [];
-    document.querySelectorAll('#opening-tokens-editor .token-editor-item').forEach(item => {
-      const symbol = item.querySelector('.token-symbol').value.trim();
-      const amount = parseFloat(item.querySelector('.token-amount').value) || 0;
-      if (symbol && amount > 0) {
-        openingTokens.push({ symbol, amount });
-      }
-    });
-    
-    // Get current tokens
-    const currentTokens = [];
-    document.querySelectorAll('#current-tokens-editor .token-editor-item').forEach(item => {
-      const symbol = item.querySelector('.token-symbol').value.trim();
-      const amount = parseFloat(item.querySelector('.token-amount').value) || 0;
-      if (symbol && amount > 0) {
-        currentTokens.push({ symbol, amount });
-      }
-    });
-    
-    // Store manual edits
-    balanceEditor.manualEdits.openingBalance = {
-      native: openingNative,
-      tokens: openingTokens
-    };
-    
-    balanceEditor.manualEdits.currentBalance = {
-      native: currentNative,
-      tokens: currentTokens
-    };
-    
-    console.log('✅ Manual edits stored:', balanceEditor.manualEdits);
-    
-    ui.showToast('✅ Balance changes applied! These values will be used in exports.', 'success');
-  },
-
-  resetChanges: () => {
-    if (!balanceEditor.originalData) return;
-    
-    // Reset to original values
-    document.getElementById('edit-opening-native').value = balanceEditor.originalData.openingBalance.native;
-    document.getElementById('edit-current-native').value = balanceEditor.originalData.currentBalance.native;
-    
-    // Clear token fields
-    document.getElementById('opening-tokens-editor').innerHTML = '';
-    document.getElementById('current-tokens-editor').innerHTML = '';
-    
-    // Clear manual edits
-    balanceEditor.manualEdits = {
-      openingBalance: null,
-      currentBalance: null,
-      deletedTransactions: new Set()
-    };
-    
-    ui.showToast('Reset to original values', 'info');
-  },
-
-  deleteTransaction: (txHash) => {
-    if (confirm('Are you sure you want to delete this transaction?')) {
-      balanceEditor.manualEdits.deletedTransactions.add(txHash);
-      
-      // Remove from filtered transactions
-      AppState.filteredTransactions = AppState.filteredTransactions.filter(tx => tx.hash !== txHash);
-      
-      // Re-render table
-      transactionManager.renderCurrentPage();
-      ui.updatePagination();
-      
-      ui.showToast('Transaction deleted. It will be excluded from exports.', 'success');
-    }
-  },
-
-  editTransaction: (txHash) => {
-    const tx = AppState.filteredTransactions.find(t => t.hash === txHash);
-    if (!tx) {
-      console.error('Transaction not found:', txHash);
-      ui.showToast('Transaction not found', 'error');
-      return;
-    }
-    
-    // Create modal
-    const modal = document.createElement('div');
-    modal.className = 'modal-overlay';
-    modal.innerHTML = `
-      <div class="modal-content">
-        <div class="modal-header">
-          <h3>Edit Transaction</h3>
-          <button class="modal-close">✕</button>
-        </div>
-        <div class="modal-body">
-          <div class="form-group">
-            <label>Date</label>
-            <input type="text" id="edit-tx-date" value="${tx.date}">
-          </div>
-          <div class="form-group">
-            <label>Type</label>
-            <select id="edit-tx-type">
-              ${transactionTypes.map(type => 
-                `<option value="${type}" ${tx.type === type ? 'selected' : ''}>${type}</option>`
-              ).join('')}
-            </select>
-          </div>
-          <div class="form-group">
-            <label>From/To</label>
-            <input type="text" id="edit-tx-from" value="${tx.from || tx.to || ''}">
-          </div>
-          <div class="form-group">
-            <label>Amount</label>
-            <input type="number" step="any" id="edit-tx-amount" value="${tx.amount}">
-          </div>
-          <div class="form-group">
-            <label>Token</label>
-            <input type="text" id="edit-tx-token" value="${tx.tokenSymbol || tx.token || ''}">
-          </div>
-          <div class="form-group">
-            <label>USD Value</label>
-            <input type="number" step="any" id="edit-tx-usd" value="${tx.usdValue || tx.usd || 0}">
-          </div>
-        </div>
-        <div class="modal-footer">
-          <button class="modal-cancel">Cancel</button>
-          <button class="modal-save">Save Changes</button>
-        </div>
-      </div>
-    `;
-    
-    document.body.appendChild(modal);
-    
-    // Close button handler
-    modal.querySelector('.modal-close').addEventListener('click', () => {
-      modal.remove();
-    });
-    
-    // Cancel button handler
-    modal.querySelector('.modal-cancel').addEventListener('click', () => {
-      modal.remove();
-    });
-    
-    // Click outside to close
-    modal.addEventListener('click', (e) => {
-      if (e.target === modal) {
-        modal.remove();
-      }
-    });
-    
-    // Save handler
-    modal.querySelector('.modal-save').addEventListener('click', () => {
-      tx.date = document.getElementById('edit-tx-date').value;
-      tx.type = document.getElementById('edit-tx-type').value;
-      tx.from = document.getElementById('edit-tx-from').value;
-      tx.amount = parseFloat(document.getElementById('edit-tx-amount').value) || 0;
-      tx.token = document.getElementById('edit-tx-token').value;
-      tx.tokenSymbol = document.getElementById('edit-tx-token').value;
-      tx.usd = parseFloat(document.getElementById('edit-tx-usd').value) || 0;
-      tx.usdValue = parseFloat(document.getElementById('edit-tx-usd').value) || 0;
-      tx.edited = true; // Mark as edited
-      
-      transactionManager.renderCurrentPage();
-      modal.remove();
-      ui.showToast('Transaction updated successfully', 'success');
-    });
-  },
-
-  getEditedData: () => {
-    const editedData = {
-      openingBalance: balanceEditor.manualEdits.openingBalance,
-      currentBalance: balanceEditor.manualEdits.currentBalance,
-      transactions: AppState.filteredTransactions.filter(tx => 
-        !balanceEditor.manualEdits.deletedTransactions.has(tx.hash)
-      )
-    };
-    
-    console.log('🔍 getEditedData called:', editedData);
-    return editedData;
-  }
-};
-
 // Export Manager
 const exportManager = {
   exportToPDF: async () => {
@@ -997,13 +735,10 @@ const exportManager = {
       
       const { address, blockchain, fromDate, toDate } = AppState.currentAnalysis;
       
-      // Get manual edits if any
-      const manualData = balanceEditor.getEditedData();
-      
       ui.showToast('Generating PDF with USD and AED conversions...', 'info');
       
       // Call backend to generate PDF
-      await apiService.exportPDF(blockchain, address, fromDate, toDate, manualData);
+      await apiService.exportPDF(blockchain, address, fromDate, toDate);
       
       ui.showToast('✅ PDF report with USD/AED conversions downloaded successfully!', 'success');
       
@@ -1127,13 +862,10 @@ const exportManager = {
       
       const { address, blockchain, fromDate, toDate } = AppState.currentAnalysis;
       
-      // Get manual edits if any
-      const manualData = balanceEditor.getEditedData();
-      
       ui.showToast('Generating CSV with opening balance...', 'info');
       
       // Call backend to generate CSV with opening balance
-      await apiService.exportCSV(blockchain, address, fromDate, toDate, manualData);
+      await apiService.exportCSV(blockchain, address, fromDate, toDate);
       
       ui.showToast('✅ CSV report with opening balance downloaded successfully!', 'success');
       
@@ -1370,19 +1102,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const csvBtnAlt = document.getElementById('export-csv-btn-alt');
   if (pdfBtnAlt) pdfBtnAlt.addEventListener('click', exportManager.exportToPDF);
   if (csvBtnAlt) csvBtnAlt.addEventListener('click', exportManager.exportToCSV);
-  
-  // Balance editor buttons
-  const toggleEditorBtn = document.getElementById('toggle-balance-editor-btn');
-  const applyEditsBtn = document.getElementById('apply-balance-edits-btn');
-  const resetEditsBtn = document.getElementById('reset-balance-edits-btn');
-  const addOpeningTokenBtn = document.getElementById('add-opening-token-btn');
-  const addCurrentTokenBtn = document.getElementById('add-current-token-btn');
-  
-  if (toggleEditorBtn) toggleEditorBtn.addEventListener('click', balanceEditor.toggleEditor);
-  if (applyEditsBtn) applyEditsBtn.addEventListener('click', balanceEditor.applyChanges);
-  if (resetEditsBtn) resetEditsBtn.addEventListener('click', balanceEditor.resetChanges);
-  if (addOpeningTokenBtn) addOpeningTokenBtn.addEventListener('click', () => balanceEditor.addTokenField('opening'));
-  if (addCurrentTokenBtn) addCurrentTokenBtn.addEventListener('click', () => balanceEditor.addTokenField('current'));
 });
 
 // Global error handler

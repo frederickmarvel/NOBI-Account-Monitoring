@@ -79,39 +79,13 @@ class BlockchainAPIService {
   }
 
   // Export PDF with USD/AED conversions
-  async exportPDF(blockchain, address, startDate, endDate, manualData = null) {
+  async exportPDF(blockchain, address, startDate, endDate) {
     const endpoint = `${this.backendUrl}/export/pdf/${blockchain}/${address}?start_date=${startDate}&end_date=${endDate}`;
     
     try {
-      const options = {
+      const response = await fetch(endpoint, {
         method: 'GET'
-      };
-      
-      // If manual data is provided, use POST instead to send the data
-      if (manualData) {
-        const hasManualData = manualData.openingBalance !== null || 
-                              manualData.currentBalance !== null || 
-                              (manualData.transactions && manualData.transactions.length > 0);
-        
-        if (hasManualData) {
-          console.log('📝 Sending manual data to backend:', manualData);
-          options.method = 'POST';
-          options.headers = {
-            'Content-Type': 'application/json'
-          };
-          options.body = JSON.stringify({
-            manualData: {
-              openingBalance: manualData.openingBalance,
-              currentBalance: manualData.currentBalance,
-              transactions: manualData.transactions
-            }
-          });
-        } else {
-          console.log('No manual edits detected, using GET');
-        }
-      }
-      
-      const response = await fetch(endpoint, options);
+      });
       
       if (!response.ok) {
         throw new Error(`Failed to generate PDF: ${response.statusText}`);
@@ -144,7 +118,7 @@ class BlockchainAPIService {
   }
 
   // Export CSV with opening balance
-  async exportCSV(blockchain, address, startDate, endDate, manualData = null) {
+  async exportCSV(blockchain, address, startDate, endDate) {
     const endpoint = `${this.backendUrl}/export-csv`;
     
     try {
@@ -154,24 +128,6 @@ class BlockchainAPIService {
         startDate,
         endDate
       };
-      
-      // Add manual data if provided
-      if (manualData) {
-        const hasManualData = manualData.openingBalance !== null || 
-                              manualData.currentBalance !== null || 
-                              (manualData.transactions && manualData.transactions.length > 0);
-        
-        if (hasManualData) {
-          console.log('📝 Sending manual data to CSV backend:', manualData);
-          requestBody.manualData = {
-            openingBalance: manualData.openingBalance,
-            currentBalance: manualData.currentBalance,
-            transactions: manualData.transactions
-          };
-        } else {
-          console.log('No manual edits for CSV, using API data');
-        }
-      }
       
       const response = await fetch(endpoint, {
         method: 'POST',
